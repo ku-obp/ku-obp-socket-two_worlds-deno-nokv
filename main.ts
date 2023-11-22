@@ -76,6 +76,6 @@ const handler = io.handler(async (request) => {
   return await app.handle(request) || new Response(null, { status: 404 });
 })
 
-serve(handler,{port: 11000})
+await serve(handler,{port: 11000})
 
 
