@@ -2,6 +2,7 @@ import { Application } from "oak"
 import {Server, Socket} from "socket-io"
 
 import * as GameManager from "./gameManager.ts"
+import { serve } from "http";
 
 const app = new Application();
 const io = new Server();
@@ -71,10 +72,10 @@ function onConnected(socket: Socket) {
 
 io.on("connection", onConnected)
 
-const handler: Deno.ServeHandler = async (request, _info) => {
+const handler = io.handler(async (request) => {
   return await app.handle(request) || new Response(null, { status: 404 });
-}
+})
 
-await Deno.serve({port: 11000}, handler)
+serve(handler,{port: 11000})
 
 

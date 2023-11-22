@@ -5,8 +5,9 @@
   "imports": {
     "oak": "https://deno.land/x/oak@v12.5.0/mod.ts",
     "evt": "https://deno.land/x/evt@v2.4.22/mod.ts",
-    "$std": "https://deno.land/std@0.207.0",
-    "$std/": "https://deno.land/std@0.207.0/",
-    "socket-io": "https://deno.land/x/socket_io@0.2.0/mod.ts"
+    "$std": "https://deno.land/std@0.188.0",
+    "$std/": "https://deno.land/std@0.188.0/",
+    "socket-io": "https://deno.land/x/socket_io@0.2.0/mod.ts",
+    "http": "https://deno.land/std@0.188.0/http/server.ts"
   }
 }
