@@ -1,0 +1,280 @@
+[
+    {
+        "cellId": 0,
+        "type": "start"
+    },
+    {
+        "cellId": 1,
+        "type": "transportation",
+        "dest": 10
+    },
+    {
+        "cellId": 2,
+        "type": "land",
+        "name": "목포",
+        "groupId": 1
+    },
+    {
+        "cellId": 3,
+        "type": "lotto"
+    },
+    {
+        "cellId": 4,
+        "type": "land",
+        "name": "강릉",
+        "groupId": 1
+    },
+    {
+        "cellId": 5,
+        "type": "chance"
+    },
+    {
+        "cellId": 6,
+        "type": "land",
+        "name": "전주",
+        "groupId": 2
+    },
+    {
+        "cellId": 7,
+        "type": "water"
+    },
+    {
+        "cellId": 8,
+        "type": "land",
+        "name": "포항",
+        "groupId": 2
+    },
+    {
+        "cellId": 9,
+        "type": "jail"
+    },
+    {
+        "cellId": 10,
+        "type": "transportation",
+        "dest": 19
+    },
+    {
+        "cellId": 11,
+        "type": "land",
+        "name": "천안",
+        "groupId": 3
+    },
+    {
+        "cellId": 12,
+        "type": "land",
+        "name": "춘천",
+        "groupId": 3
+    },
+    {
+        "cellId": 13,
+        "type": "land",
+        "name": "청주",
+        "groupId": 3
+    },
+    {
+        "cellId": 14,
+        "type": "chance"
+    },
+    {
+        "cellId": 15,
+        "type": "land",
+        "name": "성남",
+        "groupId": 4
+    },
+    {
+        "cellId": 16,
+        "type": "electricity"
+    },
+    {
+        "cellId": 17,
+        "type": "land",
+        "name": "창원",
+        "groupId": 4
+    },
+    {
+        "cellId": 18,
+        "type": "university"
+    },
+    {
+        "cellId": 19,
+        "type": "transportation",
+        "dest": 28
+    },
+    {
+        "cellId": 20,
+        "type": "land",
+        "name": "진천",
+        "groupId": 5
+    },
+    {
+        "cellId": 21,
+        "type": "gas"
+    },
+    {
+        "cellId": 22,
+        "type": "land",
+        "name": "음성",
+        "groupId": 5
+    },
+    {
+        "cellId": 23,
+        "type": "chance"
+    },
+    {
+        "cellId": 24,
+        "type": "land",
+        "name": "구미",
+        "groupId": 6
+    },
+    {
+        "cellId": 25,
+        "type": "land",
+        "name": "서산",
+        "groupId": 6
+    },
+    {
+        "cellId": 26,
+        "type": "land",
+        "name": "순천",
+        "groupId": 6
+    },
+    {
+        "cellId": 27,
+        "type": "concert"
+    },
+    {
+        "cellId": 28,
+        "type": "transportation",
+        "dest": 37
+    },
+    {
+        "cellId": 29,
+        "type": "land",
+        "name": "고양",
+        "groupId": 7
+    },
+    {
+        "cellId": 30,
+        "type": "land",
+        "name": "울산",
+        "groupId": 7
+    },
+    {
+        "cellId": 31,
+        "type": "chance"
+    },
+    {
+        "cellId": 32,
+        "type": "land",
+        "name": "수원",
+        "groupId": 8
+    },
+    {
+        "cellId": 33,
+        "type": "land",
+        "name": "광주",
+        "groupId": 8
+    },
+    {
+        "cellId": 34,
+        "type": "land",
+        "name": "대전",
+        "groupId": 8
+    },
+    {
+        "cellId": 35,
+        "type": "agriculture"
+    },
+    {
+        "cellId": 36,
+        "type": "park"
+    },
+    {
+        "cellId": 37,
+        "type": "transportation",
+        "dest": 46
+    },
+    {
+        "cellId": 38,
+        "type": "land",
+        "name": "포천",
+        "groupId": 9
+    },
+    {
+        "cellId": 39,
+        "type": "factory"
+    },
+    {
+        "cellId": 40,
+        "type": "land",
+        "name": "양주",
+        "groupId": 9
+    },
+    {
+        "cellId": 41,
+        "type": "chance"
+    },
+    {
+        "cellId": 42,
+        "type": "land",
+        "name": "용인",
+        "groupId": 10
+    },
+    {
+        "cellId": 43,
+        "type": "land",
+        "name": "여수",
+        "groupId": 10
+    },
+    {
+        "cellId": 44,
+        "type": "digital-complex"
+    },
+    {
+        "cellId": 45,
+        "type": "hospital"
+    },
+    {
+        "cellId": 46,
+        "type": "transportation",
+        "dest": 1
+    },
+    {
+        "cellId": 47,
+        "type": "land",
+        "name": "대구",
+        "groupId": 11
+    },
+    {
+        "cellId": 48,
+        "type": "land",
+        "name": "인천",
+        "groupId": 11
+    },
+    {
+        "cellId": 49,
+        "type": "land",
+        "name": "제주",
+        "groupId": 11
+    },
+    {
+        "cellId": 50,
+        "type": "chance"
+    },
+    {
+        "cellId": 51,
+        "type": "land",
+        "name": "부산",
+        "groupId": 12
+    },
+    {
+        "cellId": 52,
+        "type": "charity"
+    },
+    {
+        "cellId": 53,
+        "type": "land",
+        "name": "서울",
+        "groupId": 12
+    }
+]
