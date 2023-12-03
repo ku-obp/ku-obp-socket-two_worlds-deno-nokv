@@ -35,9 +35,13 @@ function onConnected(socket: Socket) {
           if(initial_state !== null) {
             const {players, nowInTurn} = initial_state
             socket.to(roomKey).emit("updateGameState", initial_state)
-            socket.to(roomKey).emit("turnBegin", players.filter(({icon}) => {
-              icon === nowInTurn
-            })[0].email)
+            socket.to(roomKey).emit("turnBegin", {
+              playerNowEmail: players.filter(({icon}) => {
+                icon === nowInTurn
+              })[0].email,
+              doubles_count: 0,
+              askJailbreak: false
+            })
           }
         }
       }
@@ -45,7 +49,7 @@ function onConnected(socket: Socket) {
   )
 
   socket.on("reportRollDiceResult", async ({roomKey, playerEmail, dice1, dice2, doubles_count = 0, flag_jailbreak = false}: {roomKey: string, playerEmail: string, dice1: number, dice2: number, doubles_count: number, flag_jailbreak: boolean}) => {
-    // 주사위 출력값들(dice1, dice2)부터 먼저 표시하도록 이벤트 trigger
+    socket.to(roomKey).emit("showDiceValues", {dice1, dice2})
     
     const state = await GameManager.getGameState(roomKey);
     if(state === null) {
@@ -92,8 +96,9 @@ function onConnected(socket: Socket) {
       if(task.turn_finished) {
         if((doubles_count < 3) && (dice1 === dice2)) {
           socket.to(roomKey).emit("turnBegin",{
-            playerEmail,
-            doubles_count: doubles_count + 1
+            playerNowEmail: playerEmail,
+            doubles_count: doubles_count + 1,
+            askJailbreak: false
           })
         }
         else {
@@ -125,12 +130,28 @@ function onConnected(socket: Socket) {
     if(state === null) {
       return;
     }
+    const nowInTurn: 0 | 1 | 2 | 3 = ((old): 0|1|2|3 => {
+      if(old % 4 === 0) {
+        return 1
+      } else if(old % 4 === 1) {
+        return 2
+      } else if(old % 4 === 2) {
+        return 3
+      } else {
+        return 0
+      }
+    })((state.flat().nowInTurn + 1))
     const new_state: DBManager.GameStateType = {
       ...state.flat(),
-      nowInTurn: state.flat().nowInTurn + 1
+      nowInTurn
     }
+
+    const now = new_state.players.filter(({icon}) => {
+      icon === nowInTurn
+    })[0]
+
     await GameManager.setGameState(roomKey,{
-      nowInTurn: new_state.nowInTurn
+      nowInTurn
     }, (updated) => {
       socket.to(roomKey).emit("updateGameState", updated)
     })
@@ -142,11 +163,10 @@ function onConnected(socket: Socket) {
     }
     else {
       socket.to(roomKey).emit("turnBegin", {
-        playerEmail: new_state.players.filter(({icon}) => {
-          icon === new_state.nowInTurn
-        })[0].email,
-        doubles_count: 0
-    })
+        playerNowEmail: now.email,
+        doubles_count: 0,
+        askJailbreak: (now.remainingJailTurns > 0)
+      })
     }
 
     

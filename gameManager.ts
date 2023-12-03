@@ -526,7 +526,6 @@ export const cellAction = async (socket: Socket, state: DBManager.GameStateType 
       }
     } else if(type === "jail") {
       const state_after = await jailAction(socket,roomKey,state.players,playerIdx_now)
-      socket.emit("askJailbreak")
       
       return {
         state_after,
