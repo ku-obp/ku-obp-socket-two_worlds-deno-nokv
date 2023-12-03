@@ -15,6 +15,10 @@ app.use((ctx) => {
   ctx.response.body = "Hello World!";
 });
 
+function turnEnd(socket: Socket, roomKey: string) {
+  socket.to(roomKey).emit("turnEnd")
+}
+
 
 function onConnected(socket: Socket) {
   console.log(socket.id + " is connected.");
@@ -28,7 +32,7 @@ function onConnected(socket: Socket) {
           socket.emit("updateGameState", {rejoined: true, gameState: current_game_state})
         }
         else if(joinResult !== null) {
-          socket.emit("reportJoinFailure", {msg: joinResult as string})
+          socket.emit("JoinFailed", {msg: joinResult as string})
         }
         else if (justGotFull) {
           const initial_state = await GameManager.startGame(roomKey)
@@ -102,10 +106,8 @@ function onConnected(socket: Socket) {
           })
         }
         else {
-          socket.to(roomKey).emit("turnEnd")
+          turnEnd(socket,roomKey)
         }
-      } else {
-        await GameManager.safeEnqueue(roomKey,task)
       }
     } else {
       const remainingJailTurns = ((remaining, isDouble) => {

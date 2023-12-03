@@ -1,6 +1,11 @@
 /// <reference lib="deno.unstable" />
 const kv = await Deno.openKv()
 
+
+
+
+import { PaymentTransactionJSON } from './gameManager.ts';
+
 export type PlayerIconType = 0 | 1 | 2 | 3
 
 export type RoomDataType = {
@@ -10,7 +15,6 @@ export type RoomDataType = {
     guests: string[];
     isStarted: boolean;
     isEnded: boolean;
-    waitingForAnswer: number;
 }
 
 export type UniversityStateType = "notYet" | "undergraduate" | "graduated"
@@ -81,18 +85,21 @@ export type TaskType = {
     cellType: CellType,
     turn_finished: boolean
 }
-
-export type RoomWaitingType = {
+export type RoomQueueType = {
     roomKey: string,
-    queue: {
-        at: Date,
-        task: {
-            state_after: GameStateType | null,
-            cellType: CellType
-        }
-    }[]
+    chances: {
+        queue: string[],
+        processed: number
+    },
+    payments: {
+        queue: {
+            cellId: number,
+            mandatory: PaymentTransactionJSON | null,
+            optional: PaymentTransactionJSON | null
+        }[],
+        processed: number
+    }
 }
-
 
 
 import { model, kvdex, collection } from "https://deno.land/x/kvdex@v0.25.0/mod.ts"
@@ -100,7 +107,7 @@ import { model, kvdex, collection } from "https://deno.land/x/kvdex@v0.25.0/mod.
 const RoomDataModel = model<RoomDataType>();
 const GameStateModel = model<GameStateType>();
 const RoomLogsModel = model<RoomLogsType>();
-const RoomWaitingModel = model<RoomWaitingType>();
+const RoomQueueModel = model<RoomQueueType>();
 
 const db = kvdex(kv,{
     gameState: collection(GameStateModel, {
@@ -121,7 +128,7 @@ const db = kvdex(kv,{
         },
         serialize: "json"
     }),
-    roomWaiting: collection(RoomWaitingModel, {
+    roomQueue: collection(RoomQueueModel, {
         indices: {
             roomKey: "primary"
         },
