@@ -468,7 +468,7 @@ const movePrimitive = (players: DBManager.PlayerType[], playerIdx: number, new_l
   return tmp
 }
 
-export async function distributeBasicIncome(players: DBManager.PlayerType[], government_income: number) {
+export function distributeBasicIncome(players: DBManager.PlayerType[], government_income: number) {
   return {
     players: players.map((player) => {
       return {
