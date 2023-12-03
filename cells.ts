@@ -454,7 +454,7 @@ const CHANCE_CARDS: {
             GameManager.setGameState(roomKey, {
                 players: player_updates
             },(updated) => {
-                socket.to(roomKey).emit("updateGameState", updated)
+                socket.to(roomKey).emit("updateGameState", {rejoined: null, gameState: updated})
             })
             const state_after = await GameManager.getGameState(roomKey)
             if(state_after === null) return null
@@ -476,11 +476,11 @@ const CHANCE_CARDS: {
                 dest: University.UniversityCell.cellId
             },(updated) => {
                 GameManager.setGameState(roomKey,updated,(_updated) => {
-                    socket.to(roomKey).emit("updateGameState", _updated)
+                    socket.to(roomKey).emit("updateGameState", {rejoined: null, gameState: _updated})
                 })
             },(updated) => {
                 GameManager.setGameState(roomKey,updated,(_updated) => {
-                    socket.to(roomKey).emit("updateGameState", _updated)
+                    socket.to(roomKey).emit("updateGameState", {rejoined: null, gameState: _updated})
                 })
             })
             const state_after = await GameManager.getGameState(roomKey)
@@ -510,7 +510,7 @@ const CHANCE_CARDS: {
             GameManager.setGameState(roomKey, {
                 players: player_updates
             },(updated) => {
-                socket.to(roomKey).emit("updateGameState", updated)
+                socket.to(roomKey).emit("updateGameState", {rejoined: null, gameState: updated})
             })
             const state_after = await GameManager.getGameState(roomKey)
             if(state_after === null) return null
@@ -539,7 +539,7 @@ const CHANCE_CARDS: {
             GameManager.setGameState(roomKey, {
                 players: player_updates
             },(updated) => {
-                socket.to(roomKey).emit("updateGameState", updated)
+                socket.to(roomKey).emit("updateGameState", {rejoined: null, gameState: updated})
             })
             const state_after = await GameManager.getGameState(roomKey)
             if(state_after === null) return null
@@ -568,7 +568,7 @@ const CHANCE_CARDS: {
             GameManager.setGameState(roomKey, {
                 players: player_updates
             },(updated) => {
-                socket.to(roomKey).emit("updateGameState", updated)
+                socket.to(roomKey).emit("updateGameState", {rejoined: null, gameState: updated})
             })
             const state_after = await GameManager.getGameState(roomKey)
             if(state_after === null) return null
@@ -585,7 +585,7 @@ const CHANCE_CARDS: {
                     limitRents: state.sidecars.limitRents + 4
                 }
             },(updated) => {
-                socket.to(roomKey).emit("updateGameState", updated)
+                socket.to(roomKey).emit("updateGameState", {rejoined: null, gameState: updated})
             })
             const state_after = await GameManager.getGameState(roomKey)
             if(state_after === null) return null

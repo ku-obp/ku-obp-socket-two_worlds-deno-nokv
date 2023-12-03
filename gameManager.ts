@@ -107,16 +107,74 @@ export async function startGame(roomKey: string) {
   }  
 }
 
+function joinFinances(players: DBManager.PlayerType[], properties: DBManager.PropertyType[]): {
+  playerEmail: string,
+  cash: number,
+  owns: number
+}[] {
+  const output = players.map(({email, cash}) => ({playerEmail: email, cash, owns: 0}))
+  for (let {playerEmail, owns} of output) {
+    const own_properties_count = properties.filter(({ownerEmail}) => ownerEmail === playerEmail).map(({count}) => count)
+    owns = owns + own_properties_count.reduce((sum,curr_count) => (sum + curr_count),0)
+  }
+  return output
+}
+
+
+function calculateOverallFinances(players: DBManager.PlayerType[], properties: DBManager.PropertyType[]): {
+  playerEmail: string,
+  value: number
+}[] {
+  return joinFinances(players,properties).map(({playerEmail,cash,owns}) => ({
+    playerEmail,
+    value: (owns * 300000) + cash
+  }))
+}
+
+export function deepcopyGameState(state: GameStateType): GameStateType {
+  const {
+    roomKey,
+    players,
+    properties,
+    nowInTurn,
+    govIncome,
+    charityIncome,
+    sidecars
+  } = state
+  const copied: GameStateType = {
+    roomKey,
+    players: Array.from(players),
+    properties: Array.from(properties),
+    nowInTurn,
+    govIncome,
+    charityIncome,
+    sidecars
+  }
+  return copied
+}
+
+
 export async function endGame(roomKey: string) {
-  //const roomData = (await kv.get<RoomDataType>(["two-worlds", roomKey, "roomData"])).value
-  if((await db.roomData.find(roomKey)) !== null) {
-    db.roomData.update(roomKey, {
-        isEnded: true
-      },
-      {
-        mergeType: "shallow"
-      }
-    )
+  
+  const state = (await getGameState(roomKey))?.flat() ?? null
+  if(state === null) {
+    return []
+  } else {
+    const copied = deepcopyGameState(state)
+    if((await db.roomData.find(roomKey)) !== null) {
+      const overall_finances = calculateOverallFinances(copied.players,copied.properties)
+      
+      await db.roomData.update(roomKey, {
+          isEnded: true
+        },
+        {
+          mergeType: "shallow"
+        }
+      )
+      return overall_finances
+    } else {
+      return []
+    }
   }
 }
 
@@ -447,7 +505,7 @@ const jailAction = async (socket: Socket, roomKey: string, players: DBManager.Pl
   setGameState(roomKey, {
     players: player_updates
   },(updated) => {
-    socket.to(roomKey).emit("updateGameState", updated)
+    socket.to(roomKey).emit("updateGameState", {rejoined: null, gameState: updated})
   })
   const state_after = await getGameState(roomKey)
   if(state_after === null) {return null}
@@ -477,7 +535,7 @@ export const cellAction = async (socket: Socket, state: DBManager.GameStateType 
         const roomKey = state.roomKey
         const {displayName, description, action} = randomChance()
         const state_after = await action(socket,state,playerEmail)
-        socket.to(roomKey).emit("chanceCardAcquistion", {displayName, description})
+        socket.to(roomKey).emit("notifyChanceCardAcquistion", {playerEmail, displayName, description})
         return {
           state_after,
           cellType: type,
@@ -491,11 +549,11 @@ export const cellAction = async (socket: Socket, state: DBManager.GameStateType 
             dest: dest
           },(updated) => {
             setGameState(roomKey,updated,(_updated) => {
-              socket.to(roomKey).emit("updateGameState", _updated)
+              socket.to(roomKey).emit("updateGameState", {rejoined: null, gameState: _updated})
             })
           },(updated) => {
             setGameState(roomKey,updated,(_updated) => {
-              socket.to(roomKey).emit("updateGameState", _updated)
+              socket.to(roomKey).emit("updateGameState", {rejoined: null, gameState: _updated})
             })
           })
           return {
@@ -515,7 +573,7 @@ export const cellAction = async (socket: Socket, state: DBManager.GameStateType 
           }
         })(state.players)
         setGameState(roomKey,updates,(updated) => {
-          socket.to(roomKey).emit("updateGameState", updated)
+          socket.to(roomKey).emit("updateGameState", {rejoined: null, gameState: updated})
         })
         const state_after = Utils.nullableMapper(await getGameState(roomKey), (state_wrapped) => state_wrapped.flat(),{mapNullIsGenerator: false, constant: null})
         return {
@@ -530,12 +588,12 @@ export const cellAction = async (socket: Socket, state: DBManager.GameStateType 
       return {
         state_after,
         cellType: type,
-        turn_finished: false
+        turn_finished: true
       }
     } else { // 돈을 지불하는 칸들
       const {mandatory, optional} = transact(playerEmail,Array.from(state.players),Array.from(state.properties),cell)
 
-      socket.emit("notifyPayments", {type, invoices: {mandatory, optional}})
+      socket.emit("notifyPayments", {type, invoices: {playerEmail, mandatory: mandatory ?? null, optional: optional ?? null}})
       return {
         state_after: state,
         cellType: type,
@@ -597,5 +655,77 @@ export async function safeEnqueue(roomKey: string, task: DBManager.TaskType) {
     },{
       mergeType: "shallow"
     })
+  }
+}
+
+export function tryConstruct(players: DBManager.PlayerType[], properties: DBManager.PropertyType[], playerEmail: string, location: number): [DBManager.PlayerType[],DBManager.PropertyType[]] {
+  const property_foundIdx = properties.findIndex(({cellId}) => cellId === location)
+  const isBuildable = ((cell) => {
+    if(property_foundIdx < 0) {
+      return false
+    }
+    return ((properties[property_foundIdx].count) < (cell.isBuildable as number)) && (cell.isBuildable !== 0)
+  })(PREDEFINED_CELLS[location]);
+  if(isBuildable) {
+    const players_after = players.map((player) => {
+      if(player.email === playerEmail) {
+        return {
+          ...player,
+          cash: player.cash - 300000
+        }
+      } else {
+        return player
+      }
+    })
+    const properties_after = properties.map((property) => {
+      if(property.cellId === location) {
+        return {
+          ...property,
+          count: property.count + 1
+        }
+      } else {
+        return property
+      }
+    })
+    return [players_after, properties_after]
+  } else {
+    return [Array.from(players), Array.from(properties)]
+  }
+}
+
+export function tryDeconstruct(players: DBManager.PlayerType[], properties: DBManager.PropertyType[], playerEmail: string, location: number, amount = 1): [DBManager.PlayerType[],DBManager.PropertyType[]] {
+  const property_foundIdx = properties.findIndex(({cellId}) => cellId === location)
+  const isDeconstructable = ((cell) => {
+    if(property_foundIdx < 0) {
+      return false
+    }
+    return ((properties[property_foundIdx].count) > 0) && (cell.isBuildable !== 0)
+  })(PREDEFINED_CELLS[location]);
+  if(isDeconstructable) {
+    const deconstruct_amount = Math.min(properties[property_foundIdx].count, amount)
+
+    const players_after = players.map((player) => {
+      if(player.email === playerEmail) {
+        return {
+          ...player,
+          cash: player.cash + (300000 * deconstruct_amount)
+        }
+      } else {
+        return player
+      }
+    })
+    const properties_after = properties.map((property) => {
+      if(property.cellId === location) {
+        return {
+          ...property,
+          count: property.count - deconstruct_amount
+        }
+      } else {
+        return property
+      }
+    }).filter((property) => property.count > 0)
+    return [players_after, properties_after]
+  } else {
+    return [Array.from(players), Array.from(properties)]
   }
 }

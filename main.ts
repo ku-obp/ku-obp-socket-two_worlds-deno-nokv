@@ -25,7 +25,7 @@ function onConnected(socket: Socket) {
         const [joinResult, justGotFull] = await GameManager.registerGuest(roomKey,playerEmail)
         if(joinResult === "already registered") {
           const current_game_state = (await GameManager.getGameState(roomKey))
-          socket.emit("updateGameState", {current_game_state})
+          socket.emit("updateGameState", {rejoined: true, gameState: current_game_state})
         }
         else if(joinResult !== null) {
           socket.emit("reportJoinFailure", {msg: joinResult as string})
@@ -34,7 +34,7 @@ function onConnected(socket: Socket) {
           const initial_state = await GameManager.startGame(roomKey)
           if(initial_state !== null) {
             const {players, nowInTurn} = initial_state
-            socket.to(roomKey).emit("updateGameState", initial_state)
+            socket.to(roomKey).emit("updateGameState", {rejoined: false, gameState: initial_state})
             socket.to(roomKey).emit("turnBegin", {
               playerNowEmail: players.filter(({icon}) => {
                 icon === nowInTurn
@@ -69,17 +69,17 @@ function onConnected(socket: Socket) {
         amount: dice1 + dice2
       },(updated) => {
         GameManager.setGameState(roomKey,updated,(_updated) => {
-          socket.to(roomKey).emit("updateGameState", _updated)
+          socket.to(roomKey).emit("updateGameState", {rejoined: null, gameState: _updated})
         })
       },(updated) => {
         GameManager.setGameState(roomKey,updated,(_updated) => {
-          socket.to(roomKey).emit("updateGameState", _updated)
+          socket.to(roomKey).emit("updateGameState", {rejoined: null, gameState: _updated})
         })
       })
       if (can_get_salery) {
         state_before_cell_action = await GameManager.giveSalery(state_after_move,playerEmail,flat.govIncome, (updated) => {
           GameManager.setGameState(roomKey,updated, (_updated) => {
-            socket.to(roomKey).emit("updateGameState", _updated)
+            socket.to(roomKey).emit("updateGameState", {rejoined: null, gameState: _updated})
           })
         })
       }
@@ -119,7 +119,7 @@ function onConnected(socket: Socket) {
       GameManager.setGameState(roomKey,{
         players
       },(updated) => {
-        socket.to(roomKey).emit("updateGameState",updated)
+        socket.to(roomKey).emit("updateGameState", {rejoined: null, gameState: updated})
       })
       socket.emit("checkJailbreak", {remainingJailTurns})
     }
@@ -153,13 +153,13 @@ function onConnected(socket: Socket) {
     await GameManager.setGameState(roomKey,{
       nowInTurn
     }, (updated) => {
-      socket.to(roomKey).emit("updateGameState", updated)
+      socket.to(roomKey).emit("updateGameState", {rejoined: null, gameState: updated})
     })
     
 
     if(Math.min(...(new_state.players.map(({cycles}) => cycles))) >= 4) {
-      await GameManager.endGame(roomKey)
-      socket.to(roomKey).emit("endGame", {})
+      const overall_finances = await GameManager.endGame(roomKey)
+      socket.to(roomKey).emit("endGame", overall_finances)
     }
     else {
       socket.to(roomKey).emit("turnBegin", {
