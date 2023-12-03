@@ -28,6 +28,7 @@ export type PlayerType = {
         bonus: boolean,
         doubleLotto: number,
     },
+    remainingJailTurns: number,
 }
 
 export type PropertyType = {
@@ -73,12 +74,33 @@ export type PlayingConnectionType = {
     email: string
 }
 
+import { CellType } from "./cells.ts";
 
-import { model, kvdex, collection } from "https://deno.land/x/kvdex/mod.ts"
+export type TaskType = {
+    state_after: GameStateType | null,
+    cellType: CellType,
+    turn_finished: boolean
+}
+
+export type RoomWaitingType = {
+    roomKey: string,
+    queue: {
+        at: Date,
+        task: {
+            state_after: GameStateType | null,
+            cellType: CellType
+        }
+    }[]
+}
+
+
+
+import { model, kvdex, collection } from "https://deno.land/x/kvdex@v0.25.0/mod.ts"
 
 const RoomDataModel = model<RoomDataType>();
 const GameStateModel = model<GameStateType>();
-const RoomLogsModel = model<RoomLogsType>()
+const RoomLogsModel = model<RoomLogsType>();
+const RoomWaitingModel = model<RoomWaitingType>();
 
 const db = kvdex(kv,{
     gameState: collection(GameStateModel, {
@@ -94,6 +116,12 @@ const db = kvdex(kv,{
         serialize: "json"
     }),
     roomLogs: collection(RoomLogsModel, {
+        indices: {
+            roomKey: "primary"
+        },
+        serialize: "json"
+    }),
+    roomWaiting: collection(RoomWaitingModel, {
         indices: {
             roomKey: "primary"
         },

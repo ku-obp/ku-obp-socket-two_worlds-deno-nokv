@@ -89,10 +89,10 @@ export async function startGame(roomKey: string) {
     const initial_state: GameStateType = {
       roomKey,
       players: ((arr: string[]): DBManager.PlayerType[] => [
-          {email: arr[0], icon: 0,location: 0, displayLocation: 0, cash: INITIAL_CASH, cycles: 0, university: "notYet", tickets: {discountRent: 0, bonus: false, doubleLotto: 0}},
-          {email: arr[1], icon: 1,location: 0, displayLocation: 0, cash: INITIAL_CASH, cycles: 0, university: "notYet", tickets: {discountRent: 0, bonus: false, doubleLotto: 0}},
-          {email: arr[2], icon: 2,location: 0, displayLocation: 0, cash: INITIAL_CASH, cycles: 0, university: "notYet", tickets: {discountRent: 0, bonus: false, doubleLotto: 0}},
-          {email: arr[3], icon: 3,location: 0, displayLocation: 0, cash: INITIAL_CASH, cycles: 0, university: "notYet", tickets: {discountRent: 0, bonus: false, doubleLotto: 0}},
+          {email: arr[0], icon: 0,location: 0, displayLocation: 0, cash: INITIAL_CASH, cycles: 0, university: "notYet", tickets: {discountRent: 0, bonus: false, doubleLotto: 0}, remainingJailTurns: 0},
+          {email: arr[1], icon: 1,location: 0, displayLocation: 0, cash: INITIAL_CASH, cycles: 0, university: "notYet", tickets: {discountRent: 0, bonus: false, doubleLotto: 0}, remainingJailTurns: 0},
+          {email: arr[2], icon: 2,location: 0, displayLocation: 0, cash: INITIAL_CASH, cycles: 0, university: "notYet", tickets: {discountRent: 0, bonus: false, doubleLotto: 0}, remainingJailTurns: 0},
+          {email: arr[3], icon: 3,location: 0, displayLocation: 0, cash: INITIAL_CASH, cycles: 0, university: "notYet", tickets: {discountRent: 0, bonus: false, doubleLotto: 0}, remainingJailTurns: 0},
       ])(shuffled),
       properties: [],
       nowInTurn: 0,
@@ -429,30 +429,47 @@ export async function giveSalery(state: DBManager.GameStateType | null, playerEm
 import * as DBManager from "./dbManager.ts"
 import { Socket } from 'socket-io';
 
-type GameAction = (socket: Socket, state: DBManager.GameStateType | null, playerEmail: string) => Promise<{
-  state_after: DBManager.GameStateType | null,
-  turn_finished: boolean
-}>
-
 const universityAction = (university: DBManager.UniversityStateType): DBManager.UniversityStateType => {
   if(university === "notYet") return "undergraduate"
   else return "graduated"
 }
 
-export const cellAction: GameAction = async (socket, state, playerEmail) => {
+const jailAction = async (socket: Socket, roomKey: string, players: DBManager.PlayerType[], playerIdx_now: number) => {
+  const player_updates = Array.from(players)
+        players[playerIdx_now].remainingJailTurns = ((remainingJailTurns) => {
+          if(remainingJailTurns <= 0) {
+            return 3
+          } else {
+            return remainingJailTurns - 1
+          }
+        })(players[playerIdx_now].remainingJailTurns)
+  
+  setGameState(roomKey, {
+    players: player_updates
+  },(updated) => {
+    socket.to(roomKey).emit("updateGameState", updated)
+  })
+  const state_after = await getGameState(roomKey)
+  if(state_after === null) {return null}
+  else {return state_after.flat()}
+}
+
+
+export const cellAction = async (socket: Socket, state: DBManager.GameStateType | null, playerEmail: string): Promise<DBManager.TaskType | null> => {
   if (state === null) {
     return null
   }
   const roomKey = state.roomKey
   const playerIdx_now = state.players.findIndex((player) => player.email === playerEmail)
-  const player_now = state.players[playerIdx_now]
-  if(player_now !== undefined) {
+  if(playerIdx_now >= 0) {
+    const player_now = state.players[playerIdx_now]
     const cell = PREDEFINED_CELLS[player_now.location]
     const type = cell.type
     if(["start", "chance", "transportation", "university", "park"].includes(type)) {
-      if((type === "start") || type === "park") {
+      if((type === "start") || (type === "park")) {
         return {
           state_after: state,
+          cellType: type,
           turn_finished: true
         }
       } else if(type === "chance") {
@@ -463,6 +480,7 @@ export const cellAction: GameAction = async (socket, state, playerEmail) => {
         socket.to(roomKey).emit("chanceCardAcquistion", {displayName, description})
         return {
           state_after,
+          cellType: type,
           turn_finished: false
         }
       } else if(type === "transportation") {
@@ -482,10 +500,13 @@ export const cellAction: GameAction = async (socket, state, playerEmail) => {
           })
           return {
             state_after: state_after_move,
+            cellType: type,
             turn_finished: true
           }
+        } else {
+          return null
         }
-      } else if(type === "university") {
+      } else {
         const updates: Partial<GameStateType> = ((players: DBManager.PlayerType[]) => {
           const players_new = Array.from(players)
           players_new[playerIdx_now].university = universityAction(players_new[playerIdx_now].university)
@@ -499,31 +520,83 @@ export const cellAction: GameAction = async (socket, state, playerEmail) => {
         const state_after = Utils.nullableMapper(await getGameState(roomKey), (state_wrapped) => state_wrapped.flat(),{mapNullIsGenerator: false, constant: null})
         return {
           state_after,
+          cellType: type,
           turn_finished: true
         }
+      }
+    } else if(type === "jail") {
+      const state_after = await jailAction(socket,roomKey,state.players,playerIdx_now)
+      socket.emit("askJailbreak")
+      
+      return {
+        state_after,
+        cellType: type,
+        turn_finished: false
       }
     } else { // 돈을 지불하는 칸들
       const {mandatory, optional} = transact(playerEmail,Array.from(state.players),Array.from(state.properties),cell)
 
-      if(type === "land") {
-        // 청구서를 띄우면서 건물 건설할지 말지 물어보기
-      } else if(type === "lotto") {
-        // 로또 도전할지 말지 물어보기
-      } else if(type === "infrastructure") {
-        // 청구서 띄우기
-      } else if(type === "charity") {
-        // 청구서 띄우기
-      } else if(type === "hospital") {
-        // 청구서 띄우기
-      } else if(type === "industrial") {
-        // 청구서를 띄우면서 산업시설 건설할지 말지 물어보기
-      } else if(type === "concert") {
-        
-      } else if(type === "jail") {
-        // 탈옥(...) 방법 물어보기
+      socket.emit("notifyPayments", {type, invoices: {mandatory, optional}})
+      return {
+        state_after: state,
+        cellType: type,
+        turn_finished: false
       }
-      
-      // 큐에 쌓아둔 청구사항들을 순차적으로 merge하여 state를 변화시키기
     }
+  } else {
+    return null
+  }
+}
+
+function dequeue<T>(queue: T[]): [(T | null), T[]] {
+  if(queue.length > 0) {
+    const item = queue[0]
+    const remaining = queue.slice(1,undefined)
+    return [item,remaining]
+  } else {
+    return [null, []]
+  }
+}
+
+export async function safeDequeue(roomKey: string) {
+  const queue = (await db.roomWaiting.find(roomKey))?.flat().queue
+  if(queue !== undefined) {
+    const [task, remaining] = dequeue(queue)
+    await db.roomWaiting.update(roomKey,{
+      queue: remaining
+    }, {
+      mergeType: "shallow"
+    })
+    return task
+  } else {
+    return null
+  }
+}
+
+export async function safeEnqueue(roomKey: string, task: DBManager.TaskType) {
+  if(task.state_after === null) {
+    return
+  }
+  const queue = (await db.roomWaiting.find(roomKey))?.flat().queue
+  if (queue === undefined) {
+    await db.roomWaiting.set(roomKey,{
+      roomKey,
+      queue: [
+        {
+          task,
+          at: new Date(),
+        }
+      ]
+    })
+  } else {
+    const new_queue = queue.concat({
+      task,
+      at: new Date(),
+    })
+    await db.roomWaiting.update(roomKey,{
+      queue: new_queue
+    },{
+      mergeType: "shallow"
+    })
   }
 }
