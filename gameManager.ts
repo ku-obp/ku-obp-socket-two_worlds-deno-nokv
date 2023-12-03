@@ -35,6 +35,24 @@ export async function removeRoom(roomKey: string) {
   await db.roomData.delete(roomKey)
 }
 
+export async function getRoomQueue(roomKey: string) {
+  const output: DBManager.RoomQueueType = (await db.roomQueue.find(roomKey))?.flat() ?? {
+    roomKey,
+    chances: {
+      queue: [],
+      processed: 0
+    },
+    payments: {
+      queue: [],
+      processed: 0
+    }
+  }
+  return output
+}
+
+
+
+
 export async function registerGuest(roomKey: string, guestEmail: string): Promise<[(string | null), boolean]> {
   let output = false
   if(await (db.roomData.find(roomKey)) === null) {
@@ -450,6 +468,18 @@ const movePrimitive = (players: DBManager.PlayerType[], playerIdx: number, new_l
   return tmp
 }
 
+export async function distributeBasicIncome(players: DBManager.PlayerType[], government_income: number) {
+  return {
+    players: players.map((player) => {
+      return {
+        ...player,
+        cash: player.cash + government_income / 4
+      }
+    }) as DBManager.PlayerType[],
+    government_income: 0
+  }
+}
+
 
 
 
@@ -548,7 +578,7 @@ const jailAction = async (socket: Socket, roomKey: string, players: DBManager.Pl
   setGameState(roomKey, {
     players: player_updates
   },(updated) => {
-    socket.to(roomKey).emit("updateGameState", {rejoined: null, gameState: updated})
+    socket.to(roomKey).emit("updateGameState", {rejoined: false, gameState: updated})
   })
   const state_after = await getGameState(roomKey)
   if(state_after === null) {return null}
@@ -599,11 +629,11 @@ export const cellAction = async (socket: Socket, state: DBManager.GameStateType 
             dest: dest
           },(updated) => {
             setGameState(roomKey,updated,(_updated) => {
-              socket.to(roomKey).emit("updateGameState", {rejoined: null, gameState: _updated})
+              socket.to(roomKey).emit("updateGameState", {rejoined: false, gameState: _updated})
             })
           },(updated) => {
             setGameState(roomKey,updated,(_updated) => {
-              socket.to(roomKey).emit("updateGameState", {rejoined: null, gameState: _updated})
+              socket.to(roomKey).emit("updateGameState", {rejoined: false, gameState: _updated})
             })
           })
           return {
@@ -623,7 +653,7 @@ export const cellAction = async (socket: Socket, state: DBManager.GameStateType 
           }
         })(state.players)
         setGameState(roomKey,updates,(updated) => {
-          socket.to(roomKey).emit("updateGameState", {rejoined: null, gameState: updated})
+          socket.to(roomKey).emit("updateGameState", {rejoined: false, gameState: updated})
         })
         const state_after = Utils.nullableMapper(await getGameState(roomKey), (state_wrapped) => state_wrapped.flat(),{mapNullIsGenerator: false, constant: null})
         return {

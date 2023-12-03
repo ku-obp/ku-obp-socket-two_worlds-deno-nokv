@@ -15,120 +15,10 @@ app.use((ctx) => {
   ctx.response.body = "Hello World!";
 });
 
-function turnEnd(socket: Socket, roomKey: string) {
-  socket.to(roomKey).emit("turnEnd")
-}
+async function turnEnd(socket: Socket, roomKey: string) {
+  socket.to(roomKey).emit("next")
 
-
-function onConnected(socket: Socket) {
-  console.log(socket.id + " is connected.");
-
-  socket.on("joinRoom",
-    async ({playerEmail, roomKey}: {playerEmail: string, roomKey: string} ) => {
-      if (!await GameManager.createRoom(roomKey,playerEmail)) {
-        const [joinResult, justGotFull] = await GameManager.registerGuest(roomKey,playerEmail)
-        if(joinResult === "already registered") {
-          const current_game_state = (await GameManager.getGameState(roomKey))
-          socket.emit("updateGameState", {rejoined: true, gameState: current_game_state})
-        }
-        else if(joinResult !== null) {
-          socket.emit("JoinFailed", {msg: joinResult as string})
-        }
-        else if (justGotFull) {
-          const initial_state = await GameManager.startGame(roomKey)
-          if(initial_state !== null) {
-            const {players, nowInTurn} = initial_state
-            socket.to(roomKey).emit("updateGameState", {rejoined: false, gameState: initial_state})
-            socket.to(roomKey).emit("turnBegin", {
-              playerNowEmail: players.filter(({icon}) => {
-                icon === nowInTurn
-              })[0].email,
-              doubles_count: 0,
-              askJailbreak: false
-            })
-          }
-        }
-      }
-    }
-  )
-
-  socket.on("reportRollDiceResult", async ({roomKey, playerEmail, dice1, dice2, doubles_count = 0, flag_jailbreak = false}: {roomKey: string, playerEmail: string, dice1: number, dice2: number, doubles_count: number, flag_jailbreak: boolean}) => {
-    socket.to(roomKey).emit("showDiceValues", {dice1, dice2})
-    
-    const state = await GameManager.getGameState(roomKey);
-    if(state === null) {
-      return;
-    }
-    const flat = state.flat();
-    const players = Array.from(flat.players);
-    const idx = players.findIndex((player) => (player.email === playerEmail));
-    if(idx < 0) {
-      return;
-    }
-    if(!flag_jailbreak) {
-      let state_before_cell_action: DBManager.GameStateType | null = null
-      const {can_get_salery, state_after_move} = await GameManager.movePlayer(flat,idx,{
-        kind: "forward",
-        type: "byAmount",
-        amount: dice1 + dice2
-      },(updated) => {
-        GameManager.setGameState(roomKey,updated,(_updated) => {
-          socket.to(roomKey).emit("updateGameState", {rejoined: null, gameState: _updated})
-        })
-      },(updated) => {
-        GameManager.setGameState(roomKey,updated,(_updated) => {
-          socket.to(roomKey).emit("updateGameState", {rejoined: null, gameState: _updated})
-        })
-      })
-      if (can_get_salery) {
-        state_before_cell_action = await GameManager.giveSalery(state_after_move,playerEmail,flat.govIncome, (updated) => {
-          GameManager.setGameState(roomKey,updated, (_updated) => {
-            socket.to(roomKey).emit("updateGameState", {rejoined: null, gameState: _updated})
-          })
-        })
-      }
-      else {
-        state_before_cell_action = state_after_move
-      }
-
-      // 도착한 곳에 따른 액션 수행
-      const task = await GameManager.cellAction(socket,state_before_cell_action,playerEmail)
-      if(task === null) {
-        return;
-      }
-
-      if(task.turn_finished) {
-        if((doubles_count < 3) && (dice1 === dice2)) {
-          socket.to(roomKey).emit("turnBegin",{
-            playerNowEmail: playerEmail,
-            doubles_count: doubles_count + 1,
-            askJailbreak: false
-          })
-        }
-        else {
-          turnEnd(socket,roomKey)
-        }
-      }
-    } else {
-      const remainingJailTurns = ((remaining, isDouble) => {
-        if (isDouble) {
-          return 0
-        } else {
-          return Math.max(0,remaining - 1)
-        }
-      })(players[idx].remainingJailTurns, (dice1 === dice2))
-      players[idx].remainingJailTurns = remainingJailTurns
-      GameManager.setGameState(roomKey,{
-        players
-      },(updated) => {
-        socket.to(roomKey).emit("updateGameState", {rejoined: null, gameState: updated})
-      })
-      socket.emit("checkJailbreak", {remainingJailTurns})
-    }
-  })
-
-  socket.on("nextTurn", async (roomKey: string) => {
-    const state = await GameManager.getGameState(roomKey)
+  const state = await GameManager.getGameState(roomKey)
     if(state === null) {
       return;
     }
@@ -155,7 +45,7 @@ function onConnected(socket: Socket) {
     await GameManager.setGameState(roomKey,{
       nowInTurn
     }, (updated) => {
-      socket.to(roomKey).emit("updateGameState", {rejoined: null, gameState: updated})
+      socket.to(roomKey).emit("updateGameState", {rejoined: false, gameState: updated})
     })
     
 
@@ -170,8 +60,139 @@ function onConnected(socket: Socket) {
         askJailbreak: (now.remainingJailTurns > 0)
       })
     }
+}
 
+
+function onConnected(socket: Socket) {
+  console.log(socket.id + " is connected.");
+
+  socket.on("joinRoom",
+    async ({playerEmail, roomKey}: {playerEmail: string, roomKey: string} ) => {
+      socket.join(roomKey)
+      if (!await GameManager.createRoom(roomKey,playerEmail)) {
+        const [joinResult, justGotFull] = await GameManager.registerGuest(roomKey,playerEmail)
+        if(joinResult === "already registered") {
+          const current_game_state: DBManager.GameStateType | undefined = (await GameManager.getGameState(roomKey))?.flat()
+          if(current_game_state !== undefined) {
+            const {
+              chances,
+              payments
+            } = await GameManager.getRoomQueue(roomKey)
+            socket.emit("updateGameState", {rejoined: true, gameState: current_game_state, rq: {chances,payments}})
+          }
+        }
+        else if(joinResult !== null) {
+          socket.emit("JoinFailed", {msg: joinResult as string})
+        }
+        else if (justGotFull) {
+          const initial_state = await GameManager.startGame(roomKey)
+          if(initial_state !== null) {
+            const {players, nowInTurn} = initial_state
+            socket.to(roomKey).emit("updateGameState", {rejoined: false, gameState: initial_state})
+            socket.to(roomKey).emit("turnBegin", {
+              playerNowEmail: players.filter(({icon}) => {
+                icon === nowInTurn
+              })[0].email,
+              doubles_count: 0,
+              askJailbreak: false
+            })
+          }
+        }
+      }
+    }
+  )
+
+  socket.on("requestBasicIncome", async (roomKey: string) => {
+    const state = await GameManager.getGameState(roomKey)
+    if(state !== null) {
+      const {
+        players,
+        govIncome,
+        roomKey
+      } = state.flat()
+      const after = await GameManager.distributeBasicIncome(players,govIncome)
+      await GameManager.setGameState(roomKey,{
+        players: after.players,
+        govIncome: after.government_income
+      }, (updated) => {
+        socket.to(roomKey).emit("updateGameState", {rejoined: false, gameState: updated})
+      })
+    }
+  })
+
+  socket.on("reportRollDiceResult", async ({roomKey, playerEmail, dice1, dice2, doubles_count = 0, flag_jailbreak = false}: {roomKey: string, playerEmail: string, dice1: number, dice2: number, doubles_count: number, flag_jailbreak: boolean}) => {
+    socket.to(roomKey).emit("showDiceValues", {dice1, dice2})
     
+    const state = await GameManager.getGameState(roomKey);
+    if(state === null) {
+      return;
+    }
+    const flat = state.flat();
+    const players = Array.from(flat.players);
+    const idx = players.findIndex((player) => (player.email === playerEmail));
+    if(idx < 0) {
+      return;
+    }
+    if(!flag_jailbreak) {
+      let state_before_cell_action: DBManager.GameStateType | null = null
+      const {can_get_salery, state_after_move} = await GameManager.movePlayer(flat,idx,{
+        kind: "forward",
+        type: "byAmount",
+        amount: dice1 + dice2
+      },(updated) => {
+        GameManager.setGameState(roomKey,updated,(_updated) => {
+          socket.to(roomKey).emit("updateGameState", {rejoined: false, gameState: _updated})
+        })
+      },(updated) => {
+        GameManager.setGameState(roomKey,updated,(_updated) => {
+          socket.to(roomKey).emit("updateGameState", {rejoined: false, gameState: _updated})
+        })
+      })
+      if (can_get_salery) {
+        state_before_cell_action = await GameManager.giveSalery(state_after_move,playerEmail,flat.govIncome, (updated) => {
+          GameManager.setGameState(roomKey,updated, (_updated) => {
+            socket.to(roomKey).emit("updateGameState", {rejoined: false, gameState: _updated})
+          })
+        })
+      }
+      else {
+        state_before_cell_action = state_after_move
+      }
+
+      // 도착한 곳에 따른 액션 수행
+      const task = await GameManager.cellAction(socket,state_before_cell_action,playerEmail)
+      if(task === null) {
+        return;
+      }
+
+      if(task.turn_finished) {
+        if((doubles_count < 3) && (dice1 === dice2)) {
+          socket.to(roomKey).emit("turnBegin",{
+            playerNowEmail: playerEmail,
+            doubles_count: doubles_count + 1,
+            askJailbreak: false
+          })
+        }
+        else {
+          await turnEnd(socket,roomKey)
+        }
+      }
+    } else {
+      const remainingJailTurns = ((remaining, isDouble) => {
+        if (isDouble) {
+          return 0
+        } else {
+          return Math.max(0,remaining - 1)
+        }
+      })(players[idx].remainingJailTurns, (dice1 === dice2))
+      players[idx].remainingJailTurns = remainingJailTurns
+      GameManager.setGameState(roomKey,{
+        players
+      },(updated) => {
+        socket.to(roomKey).emit("updateGameState", {rejoined: false, gameState: updated})
+      })
+      socket.emit("checkJailbreak", {remainingJailTurns})
+    }
   })
   
   socket.on("disconnect", (reason) => {
