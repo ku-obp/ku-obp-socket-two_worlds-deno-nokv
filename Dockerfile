@@ -1,4 +1,4 @@
-FROM denoland/deno:ubuntu-1.38.1
+FROM denoland/deno:ubuntu-1.38.4
 
 # The port your application listens to.
 EXPOSE 11000
