@@ -10,8 +10,9 @@ import { serve } from "http";
 const app = new Application();
 const io = new Server({
   cors: {
-    origin: "*",
-    credentials: true
+    origin: ["https://ku-obp.vercel.app", "http://localhost:3000"],
+    methods: ["GET", "POST"],
+    allowedHeaders: ["Content-Type", "Authorization"]
   }
 });
 
