@@ -1,11 +1,11 @@
-import { Application } from "oak"
+import { Application, Router, send  } from "oak"
+import { oakCors } from "https://deno.land/x/cors/mod.ts";
 import {Server, Socket} from "socket-io"
 
 import * as DBManager from "./dbManager.ts"
 
 import * as GameManager from "./gameManager.ts"
 import { serve } from "http";
-
 
 
 const app = new Application();
@@ -45,7 +45,7 @@ async function turnEnd(socket: Socket, roomKey: string) {
     await GameManager.setGameState(roomKey,{
       nowInTurn
     }, (updated) => {
-      socket.to(roomKey).emit("updateGameState", {rejoined: false, gameState: updated})
+      socket.to(roomKey).emit("updateGameState", {fresh: false, gameState: updated})
     })
     
 
@@ -63,13 +63,27 @@ async function turnEnd(socket: Socket, roomKey: string) {
 }
 
 
+async function checkDouble(socket: Socket, roomKey: string, playerEmail: string, doubles_count: number, is_double: boolean) {
+  if((doubles_count < 3) && is_double) {
+    socket.to(roomKey).emit("turnBegin",{
+      playerNowEmail: playerEmail,
+      doubles_count: doubles_count + 1,
+      askJailbreak: false
+    })
+  }
+  else {
+    await turnEnd(socket,roomKey)
+  }
+}
+
 function onConnected(socket: Socket) {
   console.log(socket.id + " is connected.");
 
   socket.on("joinRoom",
     async ({playerEmail, roomKey}: {playerEmail: string, roomKey: string} ) => {
       socket.join(roomKey)
-      if (!await GameManager.createRoom(roomKey,playerEmail)) {
+      const [result,roomData] = await GameManager.createRoom(roomKey,playerEmail)
+      if (!result) {
         const [joinResult, justGotFull] = await GameManager.registerGuest(roomKey,playerEmail)
         if(joinResult === "already registered") {
           const current_game_state: DBManager.GameStateType | undefined = (await GameManager.getGameState(roomKey))?.flat()
@@ -78,7 +92,9 @@ function onConnected(socket: Socket) {
               chances,
               payments
             } = await GameManager.getRoomQueue(roomKey)
-            socket.emit("updateGameState", {rejoined: true, gameState: current_game_state, rq: {chances,payments}})
+            if(roomData.isStarted) {
+              socket.emit("updateGameState", {fresh: true, gameState: current_game_state, rq: {chances,payments}})
+            }
           }
         }
         else if(joinResult !== null) {
@@ -88,7 +104,20 @@ function onConnected(socket: Socket) {
           const initial_state = await GameManager.startGame(roomKey)
           if(initial_state !== null) {
             const {players, nowInTurn} = initial_state
-            socket.to(roomKey).emit("updateGameState", {rejoined: false, gameState: initial_state})
+            socket.to(roomKey).emit("updateGameState", {fresh: true, gameState: initial_state, rq: {
+              chances: {
+                queue: [] as string[],
+                processed: 0
+              }, 
+              payments: {
+                queue: [] as {
+                  cellId: number,
+                  mandatory: GameManager.PaymentTransactionJSON | null,
+                  optional: GameManager.PaymentTransactionJSON | null
+                }[],
+                processed: 0
+              }
+            }})
             socket.to(roomKey).emit("turnBegin", {
               playerNowEmail: players.filter(({icon}) => {
                 icon === nowInTurn
@@ -101,6 +130,22 @@ function onConnected(socket: Socket) {
       }
     }
   )
+
+  socket.on("reportTransaction", async ({type, roomKey, playerEmail, cellId, amount, doubles_count, is_double} : {type: "construct", roomKey: string, playerEmail: string, cellId: number, amount: 1, doubles_count: number, is_double: boolean} | {type: "sell", roomKey: string, playerEmail: string, cellId: number, amount: 1 | 2 | 3, doubles_count: number, is_double: boolean }) => {
+    const state = (await GameManager.getGameState(roomKey))?.flat()
+    if(state === undefined) {
+      return;
+    }
+    const [players, properties] = (type === "construct") ? GameManager.tryConstruct(Array.from(state.players),Array.from(state.properties),playerEmail,cellId) :
+      GameManager.tryDeconstruct(Array.from(state.players),Array.from(state.properties),playerEmail,cellId,amount);
+    GameManager.setGameState(roomKey,{
+      players,
+      properties
+    }, (updated) => {
+      socket.emit("updateGameState", {fresh: false, gameState: updated})
+    })
+    checkDouble(socket,roomKey,playerEmail, doubles_count,is_double)
+  })
 
   socket.on("requestBasicIncome", async (roomKey: string) => {
     const state = await GameManager.getGameState(roomKey)
@@ -115,10 +160,33 @@ function onConnected(socket: Socket) {
         players: after.players,
         govIncome: after.government_income
       }, (updated) => {
-        socket.to(roomKey).emit("updateGameState", {rejoined: false, gameState: updated})
+        socket.to(roomKey).emit("updateGameState", {fresh: false, gameState: updated})
       })
     }
   })
+
+  socket.on("jailbreakByMoney", async ({roomKey, playerEmail}:{roomKey: string, playerEmail: string}) => {
+    const state = (await GameManager.getGameState(roomKey))?.flat()
+    if(state === undefined) {
+      return
+    }
+
+    const playerNowIdx = (state.players ?? []).findIndex((player) => player.email === playerEmail)
+    if(playerNowIdx < 0) {
+      return;
+    } else {
+      const players = Array.from(state.players)
+      players[playerNowIdx].cash = Math.max(0, state.players[playerNowIdx].cash - 400000)
+      players[playerNowIdx].remainingJailTurns = 0
+      await GameManager.setGameState(roomKey,{
+        players
+      }, (updated) => {
+        socket.to(roomKey).emit("updateGameState", {fresh: false, gameState: updated})
+      })
+      turnEnd(socket,roomKey)
+    }
+  })
+
 
   socket.on("reportRollDiceResult", async ({roomKey, playerEmail, dice1, dice2, doubles_count = 0, flag_jailbreak = false}: {roomKey: string, playerEmail: string, dice1: number, dice2: number, doubles_count: number, flag_jailbreak: boolean}) => {
     socket.to(roomKey).emit("showDiceValues", {dice1, dice2})
@@ -141,17 +209,17 @@ function onConnected(socket: Socket) {
         amount: dice1 + dice2
       },(updated) => {
         GameManager.setGameState(roomKey,updated,(_updated) => {
-          socket.to(roomKey).emit("updateGameState", {rejoined: false, gameState: _updated})
+          socket.to(roomKey).emit("updateGameState", {fresh: false, gameState: _updated})
         })
       },(updated) => {
         GameManager.setGameState(roomKey,updated,(_updated) => {
-          socket.to(roomKey).emit("updateGameState", {rejoined: false, gameState: _updated})
+          socket.to(roomKey).emit("updateGameState", {fresh: false, gameState: _updated})
         })
       })
       if (can_get_salery) {
         state_before_cell_action = await GameManager.giveSalery(state_after_move,playerEmail,flat.govIncome, (updated) => {
           GameManager.setGameState(roomKey,updated, (_updated) => {
-            socket.to(roomKey).emit("updateGameState", {rejoined: false, gameState: _updated})
+            socket.to(roomKey).emit("updateGameState", {fresh: false, gameState: _updated})
           })
         })
       }
@@ -166,16 +234,7 @@ function onConnected(socket: Socket) {
       }
 
       if(task.turn_finished) {
-        if((doubles_count < 3) && (dice1 === dice2)) {
-          socket.to(roomKey).emit("turnBegin",{
-            playerNowEmail: playerEmail,
-            doubles_count: doubles_count + 1,
-            askJailbreak: false
-          })
-        }
-        else {
-          await turnEnd(socket,roomKey)
-        }
+        await checkDouble(socket,roomKey,playerEmail,doubles_count,(dice1 === dice2))
       }
     } else {
       const remainingJailTurns = ((remaining, isDouble) => {
@@ -189,7 +248,7 @@ function onConnected(socket: Socket) {
       GameManager.setGameState(roomKey,{
         players
       },(updated) => {
-        socket.to(roomKey).emit("updateGameState", {rejoined: false, gameState: updated})
+        socket.to(roomKey).emit("updateGameState", {fresh: false, gameState: updated})
       })
       socket.emit("checkJailbreak", {remainingJailTurns})
     }
@@ -202,6 +261,8 @@ function onConnected(socket: Socket) {
 
 
 io.on("connection", onConnected)
+
+app.use(oakCors())
 
 const handler = io.handler(async (request) => {
   return await app.handle(request) || new Response(null, { status: 404 });

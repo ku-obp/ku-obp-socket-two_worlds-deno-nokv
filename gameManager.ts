@@ -6,9 +6,10 @@ import db, { RoomDataType, GameStateType, generateLog } from "./dbManager.ts";
 import * as Utils from "./utils.ts"
 
 
-export async function createRoom(roomKey: string, hostEmail: string) {
-  if(await (db.roomData.find(roomKey)) !== null) {
-    return false;
+export async function createRoom(roomKey: string, hostEmail: string): Promise<[boolean,RoomDataType]> {
+  const already = await (db.roomData.find(roomKey))
+  if(already !== null) {
+    return [false, already.flat()];
   }
   const roomData: RoomDataType = {
     roomKey,
@@ -28,7 +29,7 @@ export async function createRoom(roomKey: string, hostEmail: string) {
   },{
     mergeType: "shallow"
   })
-  return true;
+  return [true, roomData];
 }
 
 export async function removeRoom(roomKey: string) {
@@ -65,8 +66,10 @@ export async function registerGuest(roomKey: string, guestEmail: string): Promis
       if(tmp_flat.guests.length >= tmp_flat.maxGuests) {
         return ["the room is already full",output];
       }
-      if(tmp_flat.isStarted || tmp_flat.isEnded) {
+      if(tmp_flat.isStarted && !tmp_flat.isEnded) {
         return ["the room has already started the game",output];
+      } else if(tmp_flat.isEnded) {
+        return ["the room has already ended the game",output];
       }
       const new_guests = tmp_flat.guests.concat(guestEmail)
       output = tmp_flat.guests.length >= tmp_flat.maxGuests
@@ -578,7 +581,7 @@ const jailAction = async (socket: Socket, roomKey: string, players: DBManager.Pl
   setGameState(roomKey, {
     players: player_updates
   },(updated) => {
-    socket.to(roomKey).emit("updateGameState", {rejoined: false, gameState: updated})
+    socket.to(roomKey).emit("updateGameState", {fresh: false, gameState: updated})
   })
   const state_after = await getGameState(roomKey)
   if(state_after === null) {return null}
@@ -598,8 +601,6 @@ export const cellAction = async (socket: Socket, state: DBManager.GameStateType 
     const cell = PREDEFINED_CELLS[player_now.location]
     const {
       type,
-      name,
-      maxBuildable,
       cellId
     } = cell
     if(["start", "chance", "transportation", "university", "park"].includes(type)) {
@@ -629,11 +630,11 @@ export const cellAction = async (socket: Socket, state: DBManager.GameStateType 
             dest: dest
           },(updated) => {
             setGameState(roomKey,updated,(_updated) => {
-              socket.to(roomKey).emit("updateGameState", {rejoined: false, gameState: _updated})
+              socket.to(roomKey).emit("updateGameState", {fresh: false, gameState: _updated})
             })
           },(updated) => {
             setGameState(roomKey,updated,(_updated) => {
-              socket.to(roomKey).emit("updateGameState", {rejoined: false, gameState: _updated})
+              socket.to(roomKey).emit("updateGameState", {fresh: false, gameState: _updated})
             })
           })
           return {
@@ -653,7 +654,7 @@ export const cellAction = async (socket: Socket, state: DBManager.GameStateType 
           }
         })(state.players)
         setGameState(roomKey,updates,(updated) => {
-          socket.to(roomKey).emit("updateGameState", {rejoined: false, gameState: updated})
+          socket.to(roomKey).emit("updateGameState", {fresh: false, gameState: updated})
         })
         const state_after = Utils.nullableMapper(await getGameState(roomKey), (state_wrapped) => state_wrapped.flat(),{mapNullIsGenerator: false, constant: null})
         return {

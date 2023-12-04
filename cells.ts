@@ -487,7 +487,7 @@ export const CHANCE_CARDS: {
             GameManager.setGameState(roomKey, {
                 players: player_updates
             },(updated) => {
-                socket.to(roomKey).emit("updateGameState", {rejoined: false, gameState: updated})
+                socket.to(roomKey).emit("updateGameState", {fresh: false, gameState: updated})
             })
             const state_after = await GameManager.getGameState(roomKey)
             if(state_after === null) return null
@@ -509,11 +509,11 @@ export const CHANCE_CARDS: {
                 dest: University.UniversityCell.cellId
             },(updated) => {
                 GameManager.setGameState(roomKey,updated,(_updated) => {
-                    socket.to(roomKey).emit("updateGameState", {rejoined: false, gameState: _updated})
+                    socket.to(roomKey).emit("updateGameState", {fresh: false, gameState: _updated})
                 })
             },(updated) => {
                 GameManager.setGameState(roomKey,updated,(_updated) => {
-                    socket.to(roomKey).emit("updateGameState", {rejoined: false, gameState: _updated})
+                    socket.to(roomKey).emit("updateGameState", {fresh: false, gameState: _updated})
                 })
             })
             const state_after = await GameManager.getGameState(roomKey)
@@ -543,7 +543,7 @@ export const CHANCE_CARDS: {
             GameManager.setGameState(roomKey, {
                 players: player_updates
             },(updated) => {
-                socket.to(roomKey).emit("updateGameState", {rejoined: false, gameState: updated})
+                socket.to(roomKey).emit("updateGameState", {fresh: false, gameState: updated})
             })
             const state_after = await GameManager.getGameState(roomKey)
             if(state_after === null) return null
@@ -572,7 +572,7 @@ export const CHANCE_CARDS: {
             GameManager.setGameState(roomKey, {
                 players: player_updates
             },(updated) => {
-                socket.to(roomKey).emit("updateGameState", {rejoined: false, gameState: updated})
+                socket.to(roomKey).emit("updateGameState", {fresh: false, gameState: updated})
             })
             const state_after = await GameManager.getGameState(roomKey)
             if(state_after === null) return null
@@ -601,7 +601,7 @@ export const CHANCE_CARDS: {
             GameManager.setGameState(roomKey, {
                 players: player_updates
             },(updated) => {
-                socket.to(roomKey).emit("updateGameState", {rejoined: false, gameState: updated})
+                socket.to(roomKey).emit("updateGameState", {fresh: false, gameState: updated})
             })
             const state_after = await GameManager.getGameState(roomKey)
             if(state_after === null) return null
@@ -618,7 +618,7 @@ export const CHANCE_CARDS: {
                     limitRents: state.sidecars.limitRents + 4
                 }
             },(updated) => {
-                socket.to(roomKey).emit("updateGameState", {rejoined: false, gameState: updated})
+                socket.to(roomKey).emit("updateGameState", {fresh: false, gameState: updated})
             })
             const state_after = await GameManager.getGameState(roomKey)
             if(state_after === null) return null
