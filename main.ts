@@ -89,12 +89,16 @@ function onConnected(socket: Socket) {
           if(initial_state !== null) {
             const {players, nowInTurn} = initial_state
             socket.to(roomKey).emit("updateGameState", {fresh: true, gameState: initial_state, rq: {
-              chance: {
-                queue: [],
+              chances: {
+                queue: [] as string[],
                 processed: 0
               }, 
               payments: {
-                queue: [],
+                queue: [] as {
+                  cellId: number,
+                  mandatory: GameManager.PaymentTransactionJSON | null,
+                  optional: GameManager.PaymentTransactionJSON | null
+                }[],
                 processed: 0
               }
             }})
