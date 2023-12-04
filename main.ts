@@ -45,7 +45,7 @@ async function turnEnd(socket: Socket, roomKey: string) {
     await GameManager.setGameState(roomKey,{
       nowInTurn
     }, (updated) => {
-      socket.to(roomKey).emit("updateGameState", {rejoined: false, gameState: updated})
+      socket.to(roomKey).emit("updateGameState", {fresh: false, gameState: updated})
     })
     
 
@@ -78,7 +78,7 @@ function onConnected(socket: Socket) {
               chances,
               payments
             } = await GameManager.getRoomQueue(roomKey)
-            socket.emit("updateGameState", {rejoined: true, gameState: current_game_state, rq: {chances,payments}})
+            socket.emit("updateGameState", {fresh: true, gameState: current_game_state, rq: {chances,payments}})
           }
         }
         else if(joinResult !== null) {
@@ -88,7 +88,16 @@ function onConnected(socket: Socket) {
           const initial_state = await GameManager.startGame(roomKey)
           if(initial_state !== null) {
             const {players, nowInTurn} = initial_state
-            socket.to(roomKey).emit("updateGameState", {rejoined: false, gameState: initial_state})
+            socket.to(roomKey).emit("updateGameState", {fresh: true, gameState: initial_state, rq: {
+              chance: {
+                queue: [],
+                processed: 0
+              }, 
+              payments: {
+                queue: [],
+                processed: 0
+              }
+            }})
             socket.to(roomKey).emit("turnBegin", {
               playerNowEmail: players.filter(({icon}) => {
                 icon === nowInTurn
@@ -115,7 +124,7 @@ function onConnected(socket: Socket) {
         players: after.players,
         govIncome: after.government_income
       }, (updated) => {
-        socket.to(roomKey).emit("updateGameState", {rejoined: false, gameState: updated})
+        socket.to(roomKey).emit("updateGameState", {fresh: false, gameState: updated})
       })
     }
   })
@@ -141,17 +150,17 @@ function onConnected(socket: Socket) {
         amount: dice1 + dice2
       },(updated) => {
         GameManager.setGameState(roomKey,updated,(_updated) => {
-          socket.to(roomKey).emit("updateGameState", {rejoined: false, gameState: _updated})
+          socket.to(roomKey).emit("updateGameState", {fresh: false, gameState: _updated})
         })
       },(updated) => {
         GameManager.setGameState(roomKey,updated,(_updated) => {
-          socket.to(roomKey).emit("updateGameState", {rejoined: false, gameState: _updated})
+          socket.to(roomKey).emit("updateGameState", {fresh: false, gameState: _updated})
         })
       })
       if (can_get_salery) {
         state_before_cell_action = await GameManager.giveSalery(state_after_move,playerEmail,flat.govIncome, (updated) => {
           GameManager.setGameState(roomKey,updated, (_updated) => {
-            socket.to(roomKey).emit("updateGameState", {rejoined: false, gameState: _updated})
+            socket.to(roomKey).emit("updateGameState", {fresh: false, gameState: _updated})
           })
         })
       }
@@ -189,7 +198,7 @@ function onConnected(socket: Socket) {
       GameManager.setGameState(roomKey,{
         players
       },(updated) => {
-        socket.to(roomKey).emit("updateGameState", {rejoined: false, gameState: updated})
+        socket.to(roomKey).emit("updateGameState", {fresh: false, gameState: updated})
       })
       socket.emit("checkJailbreak", {remainingJailTurns})
     }

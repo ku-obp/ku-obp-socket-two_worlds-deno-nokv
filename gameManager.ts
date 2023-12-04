@@ -578,7 +578,7 @@ const jailAction = async (socket: Socket, roomKey: string, players: DBManager.Pl
   setGameState(roomKey, {
     players: player_updates
   },(updated) => {
-    socket.to(roomKey).emit("updateGameState", {rejoined: false, gameState: updated})
+    socket.to(roomKey).emit("updateGameState", {fresh: false, gameState: updated})
   })
   const state_after = await getGameState(roomKey)
   if(state_after === null) {return null}
@@ -629,11 +629,11 @@ export const cellAction = async (socket: Socket, state: DBManager.GameStateType 
             dest: dest
           },(updated) => {
             setGameState(roomKey,updated,(_updated) => {
-              socket.to(roomKey).emit("updateGameState", {rejoined: false, gameState: _updated})
+              socket.to(roomKey).emit("updateGameState", {fresh: false, gameState: _updated})
             })
           },(updated) => {
             setGameState(roomKey,updated,(_updated) => {
-              socket.to(roomKey).emit("updateGameState", {rejoined: false, gameState: _updated})
+              socket.to(roomKey).emit("updateGameState", {fresh: false, gameState: _updated})
             })
           })
           return {
@@ -653,7 +653,7 @@ export const cellAction = async (socket: Socket, state: DBManager.GameStateType 
           }
         })(state.players)
         setGameState(roomKey,updates,(updated) => {
-          socket.to(roomKey).emit("updateGameState", {rejoined: false, gameState: updated})
+          socket.to(roomKey).emit("updateGameState", {fresh: false, gameState: updated})
         })
         const state_after = Utils.nullableMapper(await getGameState(roomKey), (state_wrapped) => state_wrapped.flat(),{mapNullIsGenerator: false, constant: null})
         return {
