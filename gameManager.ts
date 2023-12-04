@@ -66,8 +66,10 @@ export async function registerGuest(roomKey: string, guestEmail: string): Promis
       if(tmp_flat.guests.length >= tmp_flat.maxGuests) {
         return ["the room is already full",output];
       }
-      if(tmp_flat.isStarted || tmp_flat.isEnded) {
+      if(tmp_flat.isStarted && !tmp_flat.isEnded) {
         return ["the room has already started the game",output];
+      } else if(tmp_flat.isEnded) {
+        return ["the room has already ended the game",output];
       }
       const new_guests = tmp_flat.guests.concat(guestEmail)
       output = tmp_flat.guests.length >= tmp_flat.maxGuests
@@ -599,8 +601,6 @@ export const cellAction = async (socket: Socket, state: DBManager.GameStateType 
     const cell = PREDEFINED_CELLS[player_now.location]
     const {
       type,
-      name,
-      maxBuildable,
       cellId
     } = cell
     if(["start", "chance", "transportation", "university", "park"].includes(type)) {

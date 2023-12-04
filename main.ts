@@ -7,7 +7,6 @@ import * as GameManager from "./gameManager.ts"
 import { serve } from "http";
 
 
-
 const app = new Application();
 const io = new Server();
 
@@ -62,6 +61,19 @@ async function turnEnd(socket: Socket, roomKey: string) {
     }
 }
 
+
+async function checkDouble(socket: Socket, roomKey: string, playerEmail: string, doubles_count: number, is_double: boolean) {
+  if((doubles_count < 3) && is_double) {
+    socket.to(roomKey).emit("turnBegin",{
+      playerNowEmail: playerEmail,
+      doubles_count: doubles_count + 1,
+      askJailbreak: false
+    })
+  }
+  else {
+    await turnEnd(socket,roomKey)
+  }
+}
 
 function onConnected(socket: Socket) {
   console.log(socket.id + " is connected.");
@@ -118,6 +130,22 @@ function onConnected(socket: Socket) {
     }
   )
 
+  socket.on("reportTransaction", async ({type, roomKey, playerEmail, cellId, amount, doubles_count, is_double} : {type: "construct", roomKey: string, playerEmail: string, cellId: number, amount: 1, doubles_count: number, is_double: boolean} | {type: "sell", roomKey: string, playerEmail: string, cellId: number, amount: 1 | 2 | 3, doubles_count: number, is_double: boolean }) => {
+    const state = (await GameManager.getGameState(roomKey))?.flat()
+    if(state === undefined) {
+      return;
+    }
+    const [players, properties] = (type === "construct") ? GameManager.tryConstruct(Array.from(state.players),Array.from(state.properties),playerEmail,cellId) :
+      GameManager.tryDeconstruct(Array.from(state.players),Array.from(state.properties),playerEmail,cellId,amount);
+    GameManager.setGameState(roomKey,{
+      players,
+      properties
+    }, (updated) => {
+      socket.emit("updateGameState", {fresh: false, gameState: updated})
+    })
+    checkDouble(socket,roomKey,playerEmail, doubles_count,is_double)
+  })
+
   socket.on("requestBasicIncome", async (roomKey: string) => {
     const state = await GameManager.getGameState(roomKey)
     if(state !== null) {
@@ -135,6 +163,29 @@ function onConnected(socket: Socket) {
       })
     }
   })
+
+  socket.on("jailbreakByMoney", async ({roomKey, playerEmail}:{roomKey: string, playerEmail: string}) => {
+    const state = (await GameManager.getGameState(roomKey))?.flat()
+    if(state === undefined) {
+      return
+    }
+
+    const playerNowIdx = (state.players ?? []).findIndex((player) => player.email === playerEmail)
+    if(playerNowIdx < 0) {
+      return;
+    } else {
+      const players = Array.from(state.players)
+      players[playerNowIdx].cash = Math.max(0, state.players[playerNowIdx].cash - 400000)
+      players[playerNowIdx].remainingJailTurns = 0
+      await GameManager.setGameState(roomKey,{
+        players
+      }, (updated) => {
+        socket.to(roomKey).emit("updateGameState", {fresh: false, gameState: updated})
+      })
+      turnEnd(socket,roomKey)
+    }
+  })
+
 
   socket.on("reportRollDiceResult", async ({roomKey, playerEmail, dice1, dice2, doubles_count = 0, flag_jailbreak = false}: {roomKey: string, playerEmail: string, dice1: number, dice2: number, doubles_count: number, flag_jailbreak: boolean}) => {
     socket.to(roomKey).emit("showDiceValues", {dice1, dice2})
@@ -182,16 +233,7 @@ function onConnected(socket: Socket) {
       }
 
       if(task.turn_finished) {
-        if((doubles_count < 3) && (dice1 === dice2)) {
-          socket.to(roomKey).emit("turnBegin",{
-            playerNowEmail: playerEmail,
-            doubles_count: doubles_count + 1,
-            askJailbreak: false
-          })
-        }
-        else {
-          await turnEnd(socket,roomKey)
-        }
+        await checkDouble(socket,roomKey,playerEmail,doubles_count,(dice1 === dice2))
       }
     } else {
       const remainingJailTurns = ((remaining, isDouble) => {
