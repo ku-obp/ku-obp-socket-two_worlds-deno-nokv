@@ -1,5 +1,5 @@
-import { Application, Router, send  } from "oak"
-import { oakCors } from "https://deno.land/x/cors/mod.ts";
+import { Application } from "oak"
+import { oakCors } from "https://deno.land/x/cors@v1.2.2/mod.ts";
 import {Server, Socket} from "socket-io"
 
 import * as DBManager from "./dbManager.ts"
@@ -10,6 +10,10 @@ import { serve } from "http";
 
 const app = new Application();
 const io = new Server();
+
+
+
+app.use(oakCors())
 
 app.use((ctx) => {
   ctx.response.body = "Hello World!";
@@ -261,8 +265,6 @@ function onConnected(socket: Socket) {
 
 
 io.on("connection", onConnected)
-
-app.use(oakCors())
 
 const handler = io.handler(async (request) => {
   return await app.handle(request) || new Response(null, { status: 404 });
