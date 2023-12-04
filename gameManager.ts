@@ -6,9 +6,10 @@ import db, { RoomDataType, GameStateType, generateLog } from "./dbManager.ts";
 import * as Utils from "./utils.ts"
 
 
-export async function createRoom(roomKey: string, hostEmail: string) {
-  if(await (db.roomData.find(roomKey)) !== null) {
-    return false;
+export async function createRoom(roomKey: string, hostEmail: string): Promise<[boolean,RoomDataType]> {
+  const already = await (db.roomData.find(roomKey))
+  if(already !== null) {
+    return [false, already.flat()];
   }
   const roomData: RoomDataType = {
     roomKey,
@@ -28,7 +29,7 @@ export async function createRoom(roomKey: string, hostEmail: string) {
   },{
     mergeType: "shallow"
   })
-  return true;
+  return [true, roomData];
 }
 
 export async function removeRoom(roomKey: string) {

@@ -69,7 +69,8 @@ function onConnected(socket: Socket) {
   socket.on("joinRoom",
     async ({playerEmail, roomKey}: {playerEmail: string, roomKey: string} ) => {
       socket.join(roomKey)
-      if (!await GameManager.createRoom(roomKey,playerEmail)) {
+      const [result,roomData] = await GameManager.createRoom(roomKey,playerEmail)
+      if (!result) {
         const [joinResult, justGotFull] = await GameManager.registerGuest(roomKey,playerEmail)
         if(joinResult === "already registered") {
           const current_game_state: DBManager.GameStateType | undefined = (await GameManager.getGameState(roomKey))?.flat()
@@ -78,7 +79,9 @@ function onConnected(socket: Socket) {
               chances,
               payments
             } = await GameManager.getRoomQueue(roomKey)
-            socket.emit("updateGameState", {fresh: true, gameState: current_game_state, rq: {chances,payments}})
+            if(roomData.isStarted) {
+              socket.emit("updateGameState", {fresh: true, gameState: current_game_state, rq: {chances,payments}})
+            }
           }
         }
         else if(joinResult !== null) {
