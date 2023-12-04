@@ -12,7 +12,8 @@ const io = new Server({
   cors: {
     origin: ["https://ku-obp.vercel.app", "http://localhost:3000"],
     methods: ["GET", "POST"],
-    allowedHeaders: ["Content-Type", "Authorization"]
+    allowedHeaders: ["Content-Type", "Authorization"],
+    credentials: true
   }
 });
 
