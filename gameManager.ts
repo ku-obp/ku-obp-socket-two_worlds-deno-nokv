@@ -793,14 +793,10 @@ export async function safeFlushChances(roomKey: string, callback: QueueCallback)
 
 export async function safeEnqueuePayment(roomKey: string, cellId: number, {mandatory, optional}: {mandatory: PaymentTransaction | null, optional: PaymentTransaction | null}, callback: QueueCallback) {
   const rq = (await db.roomQueue.find(roomKey))?.flat()
-  const converted = {
-    mandatory: Utils.nullableMapper(mandatory,PaymentTransaction.toJSON,{mapNullIsGenerator: false, constant: null}),
-    optional: Utils.nullableMapper(optional,PaymentTransaction.toJSON,{mapNullIsGenerator: false, constant: null})
-  }
   const new_item = {
     cellId,
-    mandatory: converted.mandatory,
-    optional: converted.optional
+    mandatory: Utils.nullableMapper(mandatory,PaymentTransaction.toJSON,{mapNullIsGenerator: false, constant: null}),
+    optional: Utils.nullableMapper(optional,PaymentTransaction.toJSON,{mapNullIsGenerator: false, constant: null})
   }
   let new_queue: {
     chances: {
@@ -859,6 +855,7 @@ export async function safeDequeuePayment(roomKey: string, callback: QueueCallbac
     } else {
       const json = payments.queue[idx]
       const converted = {
+        cellId: json.cellId,
         mandatory: Utils.nullableMapper(json.mandatory,PaymentTransaction.fromJSON,{mapNullIsGenerator: false, constant: null}),
         optional: Utils.nullableMapper(json.optional,PaymentTransaction.fromJSON,{mapNullIsGenerator: false, constant: null})
       }
