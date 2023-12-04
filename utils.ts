@@ -63,12 +63,14 @@ export class DifferentNumberPair<T extends number> {
     }
 }
 
-export function nullableMapper<T, R, N>(orig: T | null, mapNonNull: (value: T) => R, {mapNullIsGenerator, generator, constant}: {mapNullIsGenerator: true, generator: () => N, constant?: undefined} | {mapNullIsGenerator: false, generator?: undefined, constant: N}): R | N {
+export type NullableMapperOptionType<T, R, N> = {mapNullIsGenerator: true, generator: () => N, constant?: undefined} | {mapNullIsGenerator: false, generator?: undefined, constant: N}
+
+export function nullableMapper<T, R, N>(orig: T | null, mapNonNull: (value: T) => R, option: NullableMapperOptionType<T,R,N>): R | N {
     if (orig !== null) {
         return mapNonNull(orig);
-    } else if(mapNullIsGenerator) {
-        return generator()
+    } else if(option.mapNullIsGenerator) {
+        return option.generator()
     } else {
-        return constant
+        return option.constant
     }
 }

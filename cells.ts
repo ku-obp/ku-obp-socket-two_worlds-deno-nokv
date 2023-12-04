@@ -33,7 +33,7 @@ export type TransactionType = {get?: number; pay?: number}
 export interface ICellData {
     get type(): CellType;
     get name(): string;
-    get isBuildable(): BuildableFlagType;
+    get maxBuildable(): BuildableFlagType;
     get paymentInfos(): PaymentType[];
     get cellId(): number;
     readonly group_id?: number;
@@ -45,7 +45,7 @@ export class Infrastructure implements ICellData {
     private constructor(kind: keyof (typeof INFRASTRUCTURE_NAMES)) {
         this.kind = kind;
     }
-    public get isBuildable(): BuildableFlagType { return 0 }
+    public get maxBuildable(): BuildableFlagType { return 0 }
     public get name() { return INFRASTRUCTURE_NAMES[this.kind].name }
     public get paymentInfos(): PaymentType[] {
         return [generateNormalPaymentInfo("P2G", 300000)]
@@ -76,7 +76,7 @@ export class Land implements ICellData {
         this._price = GROUP_PRICES[_group_id];
         this.group_id = _group_id;
     }
-    public get isBuildable(): BuildableFlagType { return 3 }
+    public get maxBuildable(): BuildableFlagType { return 3 }
     public get name() { return this._name }
     public get cellId(): number {
         return this._cell_id
@@ -95,7 +95,7 @@ export class Lotto implements ICellData {
     public get cellId(): number {
         return this._cell_id
     }
-    public get isBuildable(): BuildableFlagType { return 0 }
+    public get maxBuildable(): BuildableFlagType { return 0 }
     public get name() { return "로또" }
     public static readonly LottoCell = new Lotto()
 }
@@ -112,7 +112,7 @@ export class Charity implements ICellData {
     public get cellId(): number {
         return this._cell_id
     }
-    public get isBuildable(): BuildableFlagType { return 0 }
+    public get maxBuildable(): BuildableFlagType { return 0 }
     public get name() { return "구제기금" }
 
     public static readonly CharityCell = new Charity()
@@ -130,7 +130,7 @@ export class Chance implements ICellData {
     public get cellId(): number {
         return this._cell_id
     }
-    public get isBuildable(): BuildableFlagType { return 0 }
+    public get maxBuildable(): BuildableFlagType { return 0 }
     public get name() { return "변화카드" }
     public static readonly ChanceCells: {
         [cellId: number]: Chance
@@ -159,7 +159,7 @@ export class Transportation implements ICellData {
     public get cellId(): number {
         return this._cell_id
     }
-    public get isBuildable(): BuildableFlagType { return 0 }
+    public get maxBuildable(): BuildableFlagType { return 0 }
     public get name() { return "대중교통" }
     public readonly dest: number
     public static readonly Transportations: {
@@ -189,7 +189,7 @@ export class Hospital implements ICellData {
     public get cellId(): number {
         return this._cell_id
     }
-    public get isBuildable(): BuildableFlagType { return 0 }
+    public get maxBuildable(): BuildableFlagType { return 0 }
     public get name() { return "병원" }
 
     public static readonly HospitalCell = new Hospital()    
@@ -209,7 +209,7 @@ export class Park implements ICellData {
     public get cellId(): number {
         return this._cell_id
     }
-    public get isBuildable(): BuildableFlagType { return 0 }
+    public get maxBuildable(): BuildableFlagType { return 0 }
     public get name() {return "공원"}
 
     public static readonly ParkCell = new Park()
@@ -227,7 +227,7 @@ export class University implements ICellData {
     public get cellId(): number {
         return this._cell_id
     }
-    public get isBuildable(): BuildableFlagType { return 0 }
+    public get maxBuildable(): BuildableFlagType { return 0 }
     public get name() { return "대학" }
 
     public static readonly UniversityCell = new University()
@@ -251,7 +251,7 @@ export class Jail implements ICellData {
     public get cellId(): number {
         return this._cell_id
     }
-    public get isBuildable(): BuildableFlagType { return 0 }
+    public get maxBuildable(): BuildableFlagType { return 0 }
     public get name() { return "감옥" }
     
     public static readonly JailCell = new Jail()
@@ -268,7 +268,7 @@ export class Start implements ICellData {
     public get cellId(): number {
       return 0
     }
-    public get isBuildable(): BuildableFlagType { return 0 }
+    public get maxBuildable(): BuildableFlagType { return 0 }
     public get name() { return "출발" }
 
     public static readonly StartCell = new Start()
@@ -281,7 +281,7 @@ export class Concert implements ICellData {
     public get name(): string {
         return "콘서트"
     }
-    public get isBuildable(): BuildableFlagType { return 0 }
+    public get maxBuildable(): BuildableFlagType { return 0 }
     public get paymentInfos(): PaymentType[] {
         return [
             generateNormalPaymentInfo("P2M", 200000),
@@ -320,7 +320,7 @@ export class Industrial implements ICellData {
     private constructor(kind: keyof (typeof INDUSTRIAL_NAMES)) {
         this.kind = kind;
     }
-    public get isBuildable(): BuildableFlagType { return 1 }
+    public get maxBuildable(): BuildableFlagType { return 1 }
     public get name() { return INDUSTRIAL_NAMES[this.kind].name }
     public get paymentInfos(): PaymentType[] {
         return [
@@ -427,7 +427,7 @@ type ChanceCard = {
     action: (socket: Socket, state: DBManager.GameStateType, playerEmail: string) => Promise<DBManager.GameStateType | null>
 }
 
-const CHANCE_IDS = [
+export const CHANCE_IDS = [
     "free-lotto",
     "scholarship",
     "discountRent",
@@ -436,7 +436,40 @@ const CHANCE_IDS = [
     "limitRents",
 ]
 
-const CHANCE_CARDS: {
+export type ChanceActionCallback = ({chances, payments}: {chances: {queue: string[], processed: number}, payments: {queue: {
+    cellId: number,
+    mandatory: GameManager.PaymentTransactionJSON | null,
+    optional: GameManager.PaymentTransactionJSON | null
+  }[], processed: number}}, {description, displayName}: {description: string, displayName: string}) => void
+
+export type PaymentsActionCallback = ({chances, payments}: {chances: {queue: string[], processed: number}, payments: {queue: {
+    cellId: number,
+    mandatory: GameManager.PaymentTransactionJSON | null,
+    optional: GameManager.PaymentTransactionJSON | null
+  }[], processed: number}}, {mandatory, optional}:{
+    mandatory: GameManager.PaymentTransactionJSON | null,
+    optional: GameManager.PaymentTransactionJSON | null
+}) => void
+
+
+export async function chanceAction(roomKey: string, socket: Socket, state: DBManager.GameStateType, playerEmail: string, chanceId: string, callback: ChanceActionCallback) {
+    const {description, displayName, action} = CHANCE_CARDS[chanceId]
+    const state_after = await action(socket,state,playerEmail)
+    GameManager.safeEnqueueChance(roomKey,chanceId,(q) => callback(q,{description,displayName}))
+    return state_after
+}
+
+import { nullableMapper } from "./utils.ts";
+
+export async function paymentAction(roomKey: string, state: DBManager.GameStateType, cellId: number, _mandatory: GameManager.PaymentTransaction | null, _optional: GameManager.PaymentTransaction | null, callback: PaymentsActionCallback) {
+    const state_after = state
+    const mandatory = nullableMapper(_mandatory,GameManager.PaymentTransaction.toJSON,{mapNullIsGenerator: false, constant: null})
+    const optional = nullableMapper(_optional,GameManager.PaymentTransaction.toJSON,{mapNullIsGenerator: false, constant: null})
+    await GameManager.safeEnqueuePayment(roomKey,cellId,{mandatory: _mandatory,optional: _optional},(q) => callback(q,{mandatory,optional}))
+    return state_after
+}
+
+export const CHANCE_CARDS: {
     [chanceId: string]: ChanceCard
 } = {
     "free-lotto": {
@@ -454,7 +487,7 @@ const CHANCE_CARDS: {
             GameManager.setGameState(roomKey, {
                 players: player_updates
             },(updated) => {
-                socket.to(roomKey).emit("updateGameState", updated)
+                socket.to(roomKey).emit("updateGameState", {rejoined: false, gameState: updated})
             })
             const state_after = await GameManager.getGameState(roomKey)
             if(state_after === null) return null
@@ -462,8 +495,8 @@ const CHANCE_CARDS: {
         }
     },
     "scholarship": {
-        description: "장학금",
-        displayName: "",
+        description: "특별한 당신, 장학금을 받기까지 참 열심히 살았습니다. 수고 많았습니다. 대학(원)으로갑니다. (수업료 무료)",
+        displayName: "장학금",
         action: async (socket,state,playerEmail) => {
             const roomKey = state.roomKey
             const playerIdx = state.players.findIndex((player) => player.email === playerEmail)
@@ -476,11 +509,11 @@ const CHANCE_CARDS: {
                 dest: University.UniversityCell.cellId
             },(updated) => {
                 GameManager.setGameState(roomKey,updated,(_updated) => {
-                    socket.to(roomKey).emit("updateGameState", _updated)
+                    socket.to(roomKey).emit("updateGameState", {rejoined: false, gameState: _updated})
                 })
             },(updated) => {
                 GameManager.setGameState(roomKey,updated,(_updated) => {
-                    socket.to(roomKey).emit("updateGameState", _updated)
+                    socket.to(roomKey).emit("updateGameState", {rejoined: false, gameState: _updated})
                 })
             })
             const state_after = await GameManager.getGameState(roomKey)
@@ -510,7 +543,7 @@ const CHANCE_CARDS: {
             GameManager.setGameState(roomKey, {
                 players: player_updates
             },(updated) => {
-                socket.to(roomKey).emit("updateGameState", updated)
+                socket.to(roomKey).emit("updateGameState", {rejoined: false, gameState: updated})
             })
             const state_after = await GameManager.getGameState(roomKey)
             if(state_after === null) return null
@@ -539,7 +572,7 @@ const CHANCE_CARDS: {
             GameManager.setGameState(roomKey, {
                 players: player_updates
             },(updated) => {
-                socket.to(roomKey).emit("updateGameState", updated)
+                socket.to(roomKey).emit("updateGameState", {rejoined: false, gameState: updated})
             })
             const state_after = await GameManager.getGameState(roomKey)
             if(state_after === null) return null
@@ -568,7 +601,7 @@ const CHANCE_CARDS: {
             GameManager.setGameState(roomKey, {
                 players: player_updates
             },(updated) => {
-                socket.to(roomKey).emit("updateGameState", updated)
+                socket.to(roomKey).emit("updateGameState", {rejoined: false, gameState: updated})
             })
             const state_after = await GameManager.getGameState(roomKey)
             if(state_after === null) return null
@@ -576,8 +609,8 @@ const CHANCE_CARDS: {
         }
     },
     "limitRents": {
-        description: "복권 게임 시 당첨금 2배가 됩니다.",
-        displayName: "",
+        description: "부동산투기가 심각합니다. 전면적인 임대료 통제정책이 시행됩니다. 1턴 동안 임대료가 면제됩니다.",
+        displayName: "임대료 통제",
         action: async (socket, state, _playerEmail) => {
             const roomKey = state.roomKey
             GameManager.setGameState(roomKey,{
@@ -585,7 +618,7 @@ const CHANCE_CARDS: {
                     limitRents: state.sidecars.limitRents + 4
                 }
             },(updated) => {
-                socket.to(roomKey).emit("updateGameState", updated)
+                socket.to(roomKey).emit("updateGameState", {rejoined: false, gameState: updated})
             })
             const state_after = await GameManager.getGameState(roomKey)
             if(state_after === null) return null
@@ -594,9 +627,8 @@ const CHANCE_CARDS: {
     }
 }
 
-export function randomChance(): ChanceCard {
-    const random_chance_id = sample(CHANCE_IDS) as string
-    return CHANCE_CARDS[random_chance_id]
+export function randomChanceId() {
+    return sample(CHANCE_IDS) as string
 }
 
 export function transact<T extends ICellData>(playerEmail: string, players: DBManager.PlayerType[], properties: DBManager.PropertyType[], cell: T): {

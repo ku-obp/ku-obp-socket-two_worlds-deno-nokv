@@ -17,7 +17,6 @@ export async function createRoom(roomKey: string, hostEmail: string) {
     guests: [] as string[],
     isStarted: false,
     isEnded: false,
-    waitingForAnswer: 0,
   };
   await db.roomData.add(roomData);
   await db.roomLogs.add({
@@ -36,6 +35,24 @@ export async function removeRoom(roomKey: string) {
   await db.roomData.delete(roomKey)
 }
 
+export async function getRoomQueue(roomKey: string) {
+  const output: DBManager.RoomQueueType = (await db.roomQueue.find(roomKey))?.flat() ?? {
+    roomKey,
+    chances: {
+      queue: [],
+      processed: 0
+    },
+    payments: {
+      queue: [],
+      processed: 0
+    }
+  }
+  return output
+}
+
+
+
+
 export async function registerGuest(roomKey: string, guestEmail: string): Promise<[(string | null), boolean]> {
   let output = false
   if(await (db.roomData.find(roomKey)) === null) {
@@ -53,7 +70,7 @@ export async function registerGuest(roomKey: string, guestEmail: string): Promis
       }
       const new_guests = tmp_flat.guests.concat(guestEmail)
       output = tmp_flat.guests.length >= tmp_flat.maxGuests
-      db.roomData.update(roomKey,{
+      await db.roomData.update(roomKey,{
         guests: new_guests
       },
       {
@@ -76,7 +93,7 @@ export async function startGame(roomKey: string) {
     if(flatRoomData.isEnded) {
       return null;
     } else {
-      db.roomData.update(roomKey,{
+      await db.roomData.update(roomKey,{
         isStarted: true
       },
       {
@@ -102,21 +119,79 @@ export async function startGame(roomKey: string) {
         limitRents: 0
       }
     }
-    db.gameState.set(roomKey,initial_state)
+    await db.gameState.set(roomKey,initial_state)
     return initial_state;
   }  
 }
 
+function joinFinances(players: DBManager.PlayerType[], properties: DBManager.PropertyType[]): {
+  playerEmail: string,
+  cash: number,
+  owns: number
+}[] {
+  const output = players.map(({email, cash}) => ({playerEmail: email, cash, owns: 0}))
+  for (let {playerEmail, owns} of output) {
+    const own_properties_count = properties.filter(({ownerEmail}) => ownerEmail === playerEmail).map(({count}) => count)
+    owns = owns + own_properties_count.reduce((sum,curr_count) => (sum + curr_count),0)
+  }
+  return output
+}
+
+
+function calculateOverallFinances(players: DBManager.PlayerType[], properties: DBManager.PropertyType[]): {
+  playerEmail: string,
+  value: number
+}[] {
+  return joinFinances(players,properties).map(({playerEmail,cash,owns}) => ({
+    playerEmail,
+    value: (owns * 300000) + cash
+  }))
+}
+
+export function deepcopyGameState(state: GameStateType): GameStateType {
+  const {
+    roomKey,
+    players,
+    properties,
+    nowInTurn,
+    govIncome,
+    charityIncome,
+    sidecars
+  } = state
+  const copied: GameStateType = {
+    roomKey,
+    players: Array.from(players),
+    properties: Array.from(properties),
+    nowInTurn,
+    govIncome,
+    charityIncome,
+    sidecars
+  }
+  return copied
+}
+
+
 export async function endGame(roomKey: string) {
-  //const roomData = (await kv.get<RoomDataType>(["two-worlds", roomKey, "roomData"])).value
-  if((await db.roomData.find(roomKey)) !== null) {
-    db.roomData.update(roomKey, {
-        isEnded: true
-      },
-      {
-        mergeType: "shallow"
-      }
-    )
+  
+  const state = (await getGameState(roomKey))?.flat() ?? null
+  if(state === null) {
+    return []
+  } else {
+    const copied = deepcopyGameState(state)
+    if((await db.roomData.find(roomKey)) !== null) {
+      const overall_finances = calculateOverallFinances(copied.players,copied.properties)
+      
+      await db.roomData.update(roomKey, {
+          isEnded: true
+        },
+        {
+          mergeType: "shallow"
+        }
+      )
+      return overall_finances
+    } else {
+      return []
+    }
   }
 }
 
@@ -137,23 +212,57 @@ export async function setGameState(roomKey: string, new_state: Partial<GameState
 }
 
 export class PaymentTransaction {
-  public readonly player0: number
-  public readonly player1: number
-  public readonly player2: number
-  public readonly player3: number
-  public readonly government: number
-  public readonly charity: number
+  private _player0: number
+  public get player0(): number {
+    return this._player0
+  }
+  private _player1: number
+  public get player1(): number {
+    return this._player1
+  }
+  private _player2: number
+  public get player2(): number {
+    return this._player2
+  }
+  private _player3: number
+  public get player3(): number  {
+    return this._player3
+  }
+  private _government: number
+  public get government(): number {
+    return this._government
+  }
+  private _charity: number
+  public get charity(): number {
+    return this._charity
+  }
   public constructor({player0, player1, player2, player3, government, charity}: {
     player0?: number, player1?: number, player2?: number, player3?: number, government?: number, charity?: number
   }) {
-    this.player0 = player0 ?? 0;
-    this.player1 = player1 ?? 0;
-    this.player2 = player2 ?? 0;
-    this.player3 = player3 ?? 0;
-    this.government = government ?? 0;
-    this.charity = charity ?? 0;
+    this._player0 = player0 ?? 0;
+    this._player1 = player1 ?? 0;
+    this._player2 = player2 ?? 0;
+    this._player3 = player3 ?? 0;
+    this._government = government ?? 0;
+    this._charity = charity ?? 0;
+  }
+  public static toJSON(transaction: PaymentTransaction): PaymentTransactionJSON {
+    const {
+      player0, player1, player2, player3, government, charity
+    }: {player0: number, player1: number, player2: number, player3: number, government: number, charity: number} = transaction
+    return {
+      player0,
+      player1,
+      player2,
+      player3,
+      government,
+      charity
+    }
   }
 
+  public static fromJSON(transactionJSON: PaymentTransactionJSON): PaymentTransaction {
+    return new PaymentTransaction(transactionJSON)
+  }
   public merge(other: PaymentTransaction): PaymentTransaction {
     return new PaymentTransaction({
       player0: this.player0 + other.player0,
@@ -276,7 +385,17 @@ export class PaymentTransaction {
   }
 }
 
-import PREDEFINED_CELLS, {randomChance, Transportation, transact} from "./cells.ts";
+export type PaymentTransactionJSON = {
+  player0: number;
+  player1: number;
+  player2: number;
+  player3: number;
+  government: number;
+  charity: number;
+}
+
+
+import PREDEFINED_CELLS, {randomChanceId, Transportation, transact, ChanceActionCallback, chanceAction, PaymentsActionCallback} from "./cells.ts";
 
 import { Timeout } from "https://deno.land/x/timeout@2.4/mod.ts"
 
@@ -347,6 +466,18 @@ const movePrimitive = (players: DBManager.PlayerType[], playerIdx: number, new_l
     callback(update)
   })
   return tmp
+}
+
+export function distributeBasicIncome(players: DBManager.PlayerType[], government_income: number) {
+  return {
+    players: players.map((player) => {
+      return {
+        ...player,
+        cash: player.cash + government_income / 4
+      }
+    }) as DBManager.PlayerType[],
+    government_income: 0
+  }
 }
 
 
@@ -447,12 +578,13 @@ const jailAction = async (socket: Socket, roomKey: string, players: DBManager.Pl
   setGameState(roomKey, {
     players: player_updates
   },(updated) => {
-    socket.to(roomKey).emit("updateGameState", updated)
+    socket.to(roomKey).emit("updateGameState", {rejoined: false, gameState: updated})
   })
   const state_after = await getGameState(roomKey)
   if(state_after === null) {return null}
   else {return state_after.flat()}
 }
+
 
 
 export const cellAction = async (socket: Socket, state: DBManager.GameStateType | null, playerEmail: string): Promise<DBManager.TaskType | null> => {
@@ -464,7 +596,12 @@ export const cellAction = async (socket: Socket, state: DBManager.GameStateType 
   if(playerIdx_now >= 0) {
     const player_now = state.players[playerIdx_now]
     const cell = PREDEFINED_CELLS[player_now.location]
-    const type = cell.type
+    const {
+      type,
+      name,
+      maxBuildable,
+      cellId
+    } = cell
     if(["start", "chance", "transportation", "university", "park"].includes(type)) {
       if((type === "start") || (type === "park")) {
         return {
@@ -474,10 +611,11 @@ export const cellAction = async (socket: Socket, state: DBManager.GameStateType 
         }
       } else if(type === "chance") {
         // 랜덤 카드 뽑은 후, 그에 따른 액션을 수행하면서 카드 내용 표출
-        const roomKey = state.roomKey
-        const {displayName, description, action} = randomChance()
-        const state_after = await action(socket,state,playerEmail)
-        socket.to(roomKey).emit("chanceCardAcquistion", {displayName, description})
+        const chanceId = randomChanceId()
+        const chanceActionCallback: ChanceActionCallback = (q,c) => {
+          socket.to(roomKey).emit("syncQueue",{kind: "notifyChanceCardAcquistion", queues: q,payload: c})
+        }
+        const state_after = await chanceAction(roomKey, socket, state, playerEmail, chanceId, chanceActionCallback)
         return {
           state_after,
           cellType: type,
@@ -491,11 +629,11 @@ export const cellAction = async (socket: Socket, state: DBManager.GameStateType 
             dest: dest
           },(updated) => {
             setGameState(roomKey,updated,(_updated) => {
-              socket.to(roomKey).emit("updateGameState", _updated)
+              socket.to(roomKey).emit("updateGameState", {rejoined: false, gameState: _updated})
             })
           },(updated) => {
             setGameState(roomKey,updated,(_updated) => {
-              socket.to(roomKey).emit("updateGameState", _updated)
+              socket.to(roomKey).emit("updateGameState", {rejoined: false, gameState: _updated})
             })
           })
           return {
@@ -515,7 +653,7 @@ export const cellAction = async (socket: Socket, state: DBManager.GameStateType 
           }
         })(state.players)
         setGameState(roomKey,updates,(updated) => {
-          socket.to(roomKey).emit("updateGameState", updated)
+          socket.to(roomKey).emit("updateGameState", {rejoined: false, gameState: updated})
         })
         const state_after = Utils.nullableMapper(await getGameState(roomKey), (state_wrapped) => state_wrapped.flat(),{mapNullIsGenerator: false, constant: null})
         return {
@@ -526,17 +664,22 @@ export const cellAction = async (socket: Socket, state: DBManager.GameStateType 
       }
     } else if(type === "jail") {
       const state_after = await jailAction(socket,roomKey,state.players,playerIdx_now)
-      socket.emit("askJailbreak")
       
       return {
         state_after,
         cellType: type,
-        turn_finished: false
+        turn_finished: true
       }
     } else { // 돈을 지불하는 칸들
-      const {mandatory, optional} = transact(playerEmail,Array.from(state.players),Array.from(state.properties),cell)
+      const p =  transact(playerEmail,Array.from(state.players),Array.from(state.properties),cell)
+      const [mandatory, optional] = [p.mandatory ?? null, p.optional ?? null]
 
-      socket.emit("notifyPayments", {type, invoices: {mandatory, optional}})
+      const paymentsActionCallback: PaymentsActionCallback = (q,p) => {
+        socket.to(roomKey).emit("syncQueue",{kind: "notifyPayments", queues: q,payload: {
+          type, name: cell.name,maxBuildable: cell.maxBuildable, invoices: p
+        }})
+      }
+      safeEnqueuePayment(roomKey,cellId,{mandatory, optional},(q) => paymentsActionCallback(q,{mandatory,optional}))
       return {
         state_after: state,
         cellType: type,
@@ -548,7 +691,7 @@ export const cellAction = async (socket: Socket, state: DBManager.GameStateType 
   }
 }
 
-function dequeue<T>(queue: T[]): [(T | null), T[]] {
+export function dequeue<T>(queue: T[]): [(T | null), T[]] {
   if(queue.length > 0) {
     const item = queue[0]
     const remaining = queue.slice(1,undefined)
@@ -558,45 +701,267 @@ function dequeue<T>(queue: T[]): [(T | null), T[]] {
   }
 }
 
-export async function safeDequeue(roomKey: string) {
-  const queue = (await db.roomWaiting.find(roomKey))?.flat().queue
-  if(queue !== undefined) {
-    const [task, remaining] = dequeue(queue)
-    await db.roomWaiting.update(roomKey,{
-      queue: remaining
-    }, {
-      mergeType: "shallow"
-    })
-    return task
-  } else {
+export type QueueCallback = ({chances, payments}: {chances: {queue: string[], processed: number}, payments: {queue: {
+  cellId: number
+  mandatory: PaymentTransactionJSON | null,
+  optional: PaymentTransactionJSON | null
+}[], processed: number}}) => void
+
+
+export async function safeEnqueueChance(roomKey: string, chanceId: string, callback: QueueCallback) {
+  const callbackParams = await (async (q) => {
+    if(q === null) {
+      const fresh = {
+        chances: {
+          queue: [chanceId],
+          processed: 0
+        },
+        payments: {
+          queue: [],
+          processed: 0
+        }
+      }
+      await db.roomQueue.set(roomKey, {...fresh, roomKey})
+      return fresh
+    } else {
+      const {chances, payments} = q.flat()
+      const updates = {
+        chances: {
+          queue: chances.queue.concat(chanceId),
+          processed: chances.processed
+        }
+      }
+      await db.roomQueue.update(roomKey,updates, {mergeType: "shallow"})
+      return {
+        chances: {
+          queue: Array.from(updates.chances.queue),
+          processed: updates.chances.processed
+        },
+        payments: {
+          queue: Array.from(payments.queue),
+          processed: payments.processed
+        }
+      }
+    }
+  })(await db.roomQueue.find(roomKey))
+  callback(callbackParams)
+}
+
+export async function safeDequeueChance(roomKey: string, callback: QueueCallback) {
+  const rq = (await db.roomQueue.find(roomKey))?.flat()
+  if(rq === undefined) {
     return null
+  } else {
+    const {chances, payments} = rq
+    const length = chances.queue.length
+    const idx = chances.processed
+    if(idx >= length) {
+      return null
+    } else {
+      const output = chances.queue[idx]
+      const new_chances = {
+        queue: chances.queue,
+        processed: Math.min(idx + 1,length)
+      }
+      await db.roomQueue.update(roomKey,{
+        chances: new_chances
+      })
+      callback({chances: new_chances, payments})
+      return output
+    }
   }
 }
 
-export async function safeEnqueue(roomKey: string, task: DBManager.TaskType) {
-  if(task.state_after === null) {
-    return
+export async function safeFlushChances(roomKey: string, callback: QueueCallback) {
+  const rq = await db.roomQueue.find(roomKey)
+  if(rq === null) {
+    return;
   }
-  const queue = (await db.roomWaiting.find(roomKey))?.flat().queue
-  if (queue === undefined) {
-    await db.roomWaiting.set(roomKey,{
-      roomKey,
-      queue: [
-        {
-          task,
-          at: new Date(),
-        }
-      ]
-    })
+  const {payments} = rq.flat()
+  await db.roomQueue.update(roomKey,{
+    chances: {
+      queue: [],
+      processed: 0
+    },
+    payments
+  })
+  callback({chances: {
+    queue: [],
+    processed: 0
+  }, payments})
+}
+
+export async function safeEnqueuePayment(roomKey: string, cellId: number, {mandatory, optional}: {mandatory: PaymentTransaction | null, optional: PaymentTransaction | null}, callback: QueueCallback) {
+  const rq = (await db.roomQueue.find(roomKey))?.flat()
+  const new_item = {
+    cellId,
+    mandatory: Utils.nullableMapper(mandatory,PaymentTransaction.toJSON,{mapNullIsGenerator: false, constant: null}),
+    optional: Utils.nullableMapper(optional,PaymentTransaction.toJSON,{mapNullIsGenerator: false, constant: null})
+  }
+  let new_queue: {
+    chances: {
+      queue: string[],
+      processed: number
+    },
+    payments: {
+      queue: {
+        cellId: number,
+        mandatory: PaymentTransactionJSON | null,
+        optional: PaymentTransactionJSON | null
+      }[],
+      processed: number
+    }
+  }
+  if(rq === undefined) { 
+    new_queue = {
+      chances: {
+        queue: [],
+        processed: 0
+      },
+      payments: {
+        queue: [new_item],
+        processed: 0
+      }
+    }
+    await db.roomQueue.set(roomKey, {...new_queue, roomKey: roomKey})
   } else {
-    const new_queue = queue.concat({
-      task,
-      at: new Date(),
+    const {payments, chances} =  rq
+    const updates = {
+      queue: payments.queue.concat(new_item),
+      processed: payments.processed
+    }
+    await db.roomQueue.update(roomKey,{
+      payments: updates
+    }, {mergeType: "shallow"})
+    new_queue = {
+      chances,
+      payments: updates
+    }
+  }
+  callback(new_queue)
+}
+  
+
+export async function safeDequeuePayment(roomKey: string, callback: QueueCallback) {
+  const rq = (await db.roomQueue.find(roomKey))?.flat()
+  if(rq === undefined) {
+    return null
+  } else {
+    const {chances, payments} = rq
+    const length = payments.queue.length
+    const idx = payments.processed
+    if(idx >= length) {
+      return null
+    } else {
+      const json = payments.queue[idx]
+      const converted = {
+        cellId: json.cellId,
+        mandatory: Utils.nullableMapper(json.mandatory,PaymentTransaction.fromJSON,{mapNullIsGenerator: false, constant: null}),
+        optional: Utils.nullableMapper(json.optional,PaymentTransaction.fromJSON,{mapNullIsGenerator: false, constant: null})
+      }
+      const updates = {
+        queue: payments.queue,
+        processed: Math.min(idx + 1,length)
+      }
+
+      await db.roomQueue.update(roomKey,{
+        payments: updates
+      })
+      callback({chances, payments: updates})
+      return converted
+    }
+  }
+}
+
+export async function safeFlushPayments(roomKey: string, callback: QueueCallback) {
+  const rq = await db.roomQueue.find(roomKey)
+  if(rq === null) {
+    return;
+  }
+  const {chances} = rq.flat()
+  await db.roomQueue.update(roomKey,{
+    chances,
+    payments: {
+      queue: [],
+      processed: 0
+    }
+  })
+  callback({chances,payments: {
+    queue: [],
+    processed: 0
+  }})
+}
+
+
+
+export function tryConstruct(players: DBManager.PlayerType[], properties: DBManager.PropertyType[], playerEmail: string, location: number): [DBManager.PlayerType[],DBManager.PropertyType[]] {
+  const property_foundIdx = properties.findIndex(({cellId}) => cellId === location)
+  const is_buildable = ((cell) => {
+    if(property_foundIdx < 0) {
+      return false
+    }
+    return ((properties[property_foundIdx].count) < (cell.maxBuildable as number)) && (cell.maxBuildable !== 0)
+  })(PREDEFINED_CELLS[location]);
+  if(is_buildable) {
+    const players_after = players.map((player) => {
+      if(player.email === playerEmail) {
+        return {
+          ...player,
+          cash: player.cash - 300000
+        }
+      } else {
+        return player
+      }
     })
-    await db.roomWaiting.update(roomKey,{
-      queue: new_queue
-    },{
-      mergeType: "shallow"
+    const properties_after = properties.map((property) => {
+      if(property.cellId === location) {
+        return {
+          ...property,
+          count: property.count + 1
+        }
+      } else {
+        return property
+      }
     })
+    return [players_after, properties_after]
+  } else {
+    return [Array.from(players), Array.from(properties)]
+  }
+}
+
+export function tryDeconstruct(players: DBManager.PlayerType[], properties: DBManager.PropertyType[], playerEmail: string, location: number, amount = 1): [DBManager.PlayerType[],DBManager.PropertyType[]] {
+  const property_foundIdx = properties.findIndex(({cellId}) => cellId === location)
+  const isDeconstructable = ((cell) => {
+    if(property_foundIdx < 0) {
+      return false
+    }
+    return ((properties[property_foundIdx].count) > 0) && (cell.maxBuildable !== 0)
+  })(PREDEFINED_CELLS[location]);
+  if(isDeconstructable) {
+    const deconstruct_amount = Math.min(properties[property_foundIdx].count, amount)
+
+    const players_after = players.map((player) => {
+      if(player.email === playerEmail) {
+        return {
+          ...player,
+          cash: player.cash + (300000 * deconstruct_amount)
+        }
+      } else {
+        return player
+      }
+    })
+    const properties_after = properties.map((property) => {
+      if(property.cellId === location) {
+        return {
+          ...property,
+          count: property.count - deconstruct_amount
+        }
+      } else {
+        return property
+      }
+    }).filter((property) => property.count > 0)
+    return [players_after, properties_after]
+  } else {
+    return [Array.from(players), Array.from(properties)]
   }
 }
