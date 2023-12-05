@@ -1,7 +1,7 @@
 /// <reference lib="deno.unstable" />
-const kv = await Deno.openKv()
+const kv = await Deno.openKv("https://ku-obp-socket-two-worlds-deno-flyio.fly.dev/")
 
-
+ 
 
 
 import { PaymentTransactionJSON } from './gameManager.ts';

@@ -1,35 +1,24 @@
 import shuffle from "https://deno.land/x/shuffle@v1.0.1/mod.ts";
 const INITIAL_CASH = 6000000;
 
-import db, { RoomDataType, GameStateType, generateLog } from "./dbManager.ts";
+import db, { GameStateType } from "./dbManager.ts";
+
+import io from "./server.ts"
 
 import * as Utils from "./utils.ts"
 
 
-export async function createRoom(roomKey: string, hostEmail: string): Promise<[boolean,RoomDataType]> {
-  const already = await (db.roomData.find(roomKey))
-  if(already !== null) {
-    return [false, already.flat()];
-  }
-  const roomData: RoomDataType = {
+export async function createRoom(roomKey: string, hostEmail: string, guests: string[]) {
+  const shuffled= shuffle([hostEmail].concat(guests.slice(0,3)))
+  await db.roomData.set(roomKey, {
     roomKey,
     hostEmail,
-    maxGuests: 3,
-    guests: [] as string[],
-    isStarted: false,
-    isEnded: false,
-  };
-  await db.roomData.add(roomData);
-  await db.roomLogs.add({
-    roomKey,
-    logs: []
+    guests,
+    maxGuests: guests.length,
+    isStarted: true,
+    isEnded: false
   })
-  await db.roomLogs.update(roomKey,{
-    logs: [generateLog(`room ${roomKey} created by ${hostEmail}`)]
-  },{
-    mergeType: "shallow"
-  })
-  return [true, roomData];
+  await initializeGame(roomKey,shuffled)
 }
 
 export async function removeRoom(roomKey: string) {
@@ -51,81 +40,25 @@ export async function getRoomQueue(roomKey: string) {
   return output
 }
 
-
-
-
-export async function registerGuest(roomKey: string, guestEmail: string): Promise<[(string | null), boolean]> {
-  let output = false
-  if(await (db.roomData.find(roomKey)) === null) {
-    return ["incorrect roomKey", output];
-  }
-  const tmp = await db.roomData.find(roomKey)
-  if(tmp !== null) {
-    const tmp_flat = tmp.flat()
-    if(!tmp_flat.guests.includes(guestEmail)) {
-      if(tmp_flat.guests.length >= tmp_flat.maxGuests) {
-        return ["the room is already full",output];
-      }
-      if(tmp_flat.isStarted && !tmp_flat.isEnded) {
-        return ["the room has already started the game",output];
-      } else if(tmp_flat.isEnded) {
-        return ["the room has already ended the game",output];
-      }
-      const new_guests = tmp_flat.guests.concat(guestEmail)
-      output = tmp_flat.guests.length >= tmp_flat.maxGuests
-      await db.roomData.update(roomKey,{
-        guests: new_guests
-      },
-      {
-        mergeType: "shallow"
-      })
-    }
-    else {
-      return ["already registered", output]
+export async function initializeGame(roomKey: string, shuffled: string[]) {
+  const initial_state: GameStateType = {
+    roomKey,
+    players: ((arr: string[]): DBManager.PlayerType[] => [
+        {email: arr[0], icon: 0,location: 0, displayLocation: 0, cash: INITIAL_CASH, cycles: 0, university: "notYet", tickets: {discountRent: 0, bonus: false, doubleLotto: 0}, remainingJailTurns: 0},
+        {email: arr[1], icon: 1,location: 0, displayLocation: 0, cash: INITIAL_CASH, cycles: 0, university: "notYet", tickets: {discountRent: 0, bonus: false, doubleLotto: 0}, remainingJailTurns: 0},
+        {email: arr[2], icon: 2,location: 0, displayLocation: 0, cash: INITIAL_CASH, cycles: 0, university: "notYet", tickets: {discountRent: 0, bonus: false, doubleLotto: 0}, remainingJailTurns: 0},
+        {email: arr[3], icon: 3,location: 0, displayLocation: 0, cash: INITIAL_CASH, cycles: 0, university: "notYet", tickets: {discountRent: 0, bonus: false, doubleLotto: 0}, remainingJailTurns: 0},
+    ])(shuffled),
+    properties: [],
+    nowInTurn: 0,
+    govIncome: 0,
+    charityIncome: 0,
+    sidecars: {
+      limitRents: 0
     }
   }
-  return [null, output]
-}
-
-export async function startGame(roomKey: string) {
-  const rawRoomData = await db.roomData.find(roomKey)
-  if(rawRoomData === null) {
-    return null
-  } else {
-    const flatRoomData = rawRoomData.flat()
-    if(flatRoomData.isEnded) {
-      return null;
-    } else {
-      await db.roomData.update(roomKey,{
-        isStarted: true
-      },
-      {
-        mergeType: "shallow"
-      })
-    }
-
-    const shuffled = shuffle([flatRoomData.hostEmail, ...flatRoomData.guests.slice(0,3)])
-
-    const initial_state: GameStateType = {
-      roomKey,
-      players: ((arr: string[]): DBManager.PlayerType[] => [
-          {email: arr[0], icon: 0,location: 0, displayLocation: 0, cash: INITIAL_CASH, cycles: 0, university: "notYet", tickets: {discountRent: 0, bonus: false, doubleLotto: 0}, remainingJailTurns: 0},
-          {email: arr[1], icon: 1,location: 0, displayLocation: 0, cash: INITIAL_CASH, cycles: 0, university: "notYet", tickets: {discountRent: 0, bonus: false, doubleLotto: 0}, remainingJailTurns: 0},
-          {email: arr[2], icon: 2,location: 0, displayLocation: 0, cash: INITIAL_CASH, cycles: 0, university: "notYet", tickets: {discountRent: 0, bonus: false, doubleLotto: 0}, remainingJailTurns: 0},
-          {email: arr[3], icon: 3,location: 0, displayLocation: 0, cash: INITIAL_CASH, cycles: 0, university: "notYet", tickets: {discountRent: 0, bonus: false, doubleLotto: 0}, remainingJailTurns: 0},
-      ])(shuffled),
-      properties: [],
-      nowInTurn: 0,
-      govIncome: 0,
-      charityIncome: 0,
-      sidecars: {
-        limitRents: 0
-      }
-    }
-    await db.gameState.set(roomKey,initial_state)
-    return initial_state;
-  }  
-}
+  await db.gameState.set(roomKey,initial_state)
+}  
 
 function joinFinances(players: DBManager.PlayerType[], properties: DBManager.PropertyType[]): {
   playerEmail: string,
@@ -561,14 +494,13 @@ export async function giveSalery(state: DBManager.GameStateType | null, playerEm
 
 
 import * as DBManager from "./dbManager.ts"
-import { Socket } from 'socket-io';
 
 const universityAction = (university: DBManager.UniversityStateType): DBManager.UniversityStateType => {
   if(university === "notYet") return "undergraduate"
   else return "graduated"
 }
 
-const jailAction = async (socket: Socket, roomKey: string, players: DBManager.PlayerType[], playerIdx_now: number) => {
+const jailAction = async (roomKey: string, players: DBManager.PlayerType[], playerIdx_now: number) => {
   const player_updates = Array.from(players)
         players[playerIdx_now].remainingJailTurns = ((remainingJailTurns) => {
           if(remainingJailTurns <= 0) {
@@ -581,7 +513,7 @@ const jailAction = async (socket: Socket, roomKey: string, players: DBManager.Pl
   setGameState(roomKey, {
     players: player_updates
   },(updated) => {
-    socket.to(roomKey).emit("updateGameState", {fresh: false, gameState: updated})
+    io.to(roomKey).emit("updateGameState", {fresh: false, gameState: updated})
   })
   const state_after = await getGameState(roomKey)
   if(state_after === null) {return null}
@@ -590,7 +522,7 @@ const jailAction = async (socket: Socket, roomKey: string, players: DBManager.Pl
 
 
 
-export const cellAction = async (socket: Socket, state: DBManager.GameStateType | null, playerEmail: string): Promise<DBManager.TaskType | null> => {
+export const cellAction = async (state: DBManager.GameStateType | null, playerEmail: string): Promise<DBManager.TaskType | null> => {
   if (state === null) {
     return null
   }
@@ -614,9 +546,9 @@ export const cellAction = async (socket: Socket, state: DBManager.GameStateType 
         // 랜덤 카드 뽑은 후, 그에 따른 액션을 수행하면서 카드 내용 표출
         const chanceId = randomChanceId()
         const chanceActionCallback: ChanceActionCallback = (q,c) => {
-          socket.to(roomKey).emit("syncQueue",{kind: "notifyChanceCardAcquistion", queues: q,payload: c})
+          io.to(roomKey).emit("syncQueue",{kind: "notifyChanceCardAcquistion", queues: q,payload: c})
         }
-        const state_after = await chanceAction(roomKey, socket, state, playerEmail, chanceId, chanceActionCallback)
+        const state_after = await chanceAction(roomKey,  state, playerEmail, chanceId, chanceActionCallback)
         return {
           state_after,
           cellType: type,
@@ -630,11 +562,11 @@ export const cellAction = async (socket: Socket, state: DBManager.GameStateType 
             dest: dest
           },(updated) => {
             setGameState(roomKey,updated,(_updated) => {
-              socket.to(roomKey).emit("updateGameState", {fresh: false, gameState: _updated})
+              io.to(roomKey).emit("updateGameState", {fresh: false, gameState: _updated})
             })
           },(updated) => {
             setGameState(roomKey,updated,(_updated) => {
-              socket.to(roomKey).emit("updateGameState", {fresh: false, gameState: _updated})
+              io.to(roomKey).emit("updateGameState", {fresh: false, gameState: _updated})
             })
           })
           return {
@@ -654,7 +586,7 @@ export const cellAction = async (socket: Socket, state: DBManager.GameStateType 
           }
         })(state.players)
         setGameState(roomKey,updates,(updated) => {
-          socket.to(roomKey).emit("updateGameState", {fresh: false, gameState: updated})
+          io.to(roomKey).emit("updateGameState", {fresh: false, gameState: updated})
         })
         const state_after = Utils.nullableMapper(await getGameState(roomKey), (state_wrapped) => state_wrapped.flat(),{mapNullIsGenerator: false, constant: null})
         return {
@@ -664,7 +596,7 @@ export const cellAction = async (socket: Socket, state: DBManager.GameStateType 
         }
       }
     } else if(type === "jail") {
-      const state_after = await jailAction(socket,roomKey,state.players,playerIdx_now)
+      const state_after = await jailAction(roomKey,state.players,playerIdx_now)
       
       return {
         state_after,
@@ -676,7 +608,7 @@ export const cellAction = async (socket: Socket, state: DBManager.GameStateType 
       const [mandatory, optional] = [p.mandatory ?? null, p.optional ?? null]
 
       const paymentsActionCallback: PaymentsActionCallback = (q,p) => {
-        socket.to(roomKey).emit("syncQueue",{kind: "notifyPayments", queues: q,payload: {
+        io.to(roomKey).emit("syncQueue",{kind: "notifyPayments", queues: q,payload: {
           type, name: cell.name,maxBuildable: cell.maxBuildable, invoices: p
         }})
       }
