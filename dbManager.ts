@@ -1,5 +1,5 @@
 /// <reference lib="deno.unstable" />
-const kv = await Deno.openKv("https://ku-obp-socket-two-worlds-deno-flyio.fly.dev/")
+const kv = (Deno.env.get("DENO_KV_ACCESS_TOKEN") !== undefined) ? await Deno.openKv("https://ku-obp-socket-two-worlds-deno-flyio.fly.dev/") : await Deno.openKv()
 
  
 
