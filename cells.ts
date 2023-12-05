@@ -326,7 +326,7 @@ export class Industrial implements ICellData {
     public get name() { return INDUSTRIAL_NAMES[this.kind].name }
     public get paymentInfos(): PaymentType[] {
         return [
-            generateP2DPaymentInfo(75000),
+            generateP2DPaymentInfo(300000),
             generateNormalPaymentInfo("P2G", 600000)
         ]
     }
@@ -669,13 +669,14 @@ export function transact<T extends ICellData>(playerEmail: string, players: DBMa
                     }
                     
                     const p2d_transactions: GameManager.PaymentTransaction[] = []
+                    const players_count = players.length
                     for(const payment_info of paymentInfos) {
                         if(payment_info.kind === "P2D") {
                             for (const other of players.filter(({icon}) => icon !== players[playerIdx_now].icon)) {
-                                p2d_transactions.push(GameManager.PaymentTransaction.P2P(players[playerIdx_now].icon,other.icon,payment_info.cost.perPlayer))
+                                p2d_transactions.push(GameManager.PaymentTransaction.P2P(players[playerIdx_now].icon,other.icon,(payment_info.cost.overall / players_count)))
                             }
                             if(playerIdx_now !== ownerIdx) {
-                                p2d_transactions.push(GameManager.PaymentTransaction.unidirectional(players[playerIdx_now].icon, -(payment_info.cost.perPlayer)))
+                                p2d_transactions.push(GameManager.PaymentTransaction.unidirectional(players[playerIdx_now].icon, -(payment_info.cost.overall / players_count)))
                             }
                         }
                     }
@@ -685,7 +686,7 @@ export function transact<T extends ICellData>(playerEmail: string, players: DBMa
                 } else {
                     for(const payment_info of paymentInfos) {
                         if(payment_info.kind === "P2D") {
-                            optionals.push(GameManager.PaymentTransaction.unidirectional(players[playerIdx_now].icon, -(payment_info.cost.perPlayer * 4)))
+                            optionals.push(GameManager.PaymentTransaction.unidirectional(players[playerIdx_now].icon, -(payment_info.cost.overall)))
                         }
                     }
                 }

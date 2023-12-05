@@ -9,7 +9,7 @@ export type PaymentType = {kind: "P2P" | "P2M" | "P2G" | "G2P" | "P2C" | "M2P" |
 } | {
     kind: "P2D",
     cost: {
-        perPlayer: number
+        overall: number
     }
 };
 
@@ -23,11 +23,11 @@ export function generateNormalPaymentInfo(kind: "P2P" | "P2M" | "P2G" | "G2P" | 
     }
 }
 
-export function generateP2DPaymentInfo(perPlayer: number): PaymentType {
+export function generateP2DPaymentInfo(overall: number): PaymentType {
     return {
         kind: "P2D",
         cost: {
-            perPlayer
+            overall
         }
     }
 }

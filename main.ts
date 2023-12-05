@@ -9,12 +9,46 @@ import { serve } from "http";
 
 const app = new Application();
 
-import io from "./server.ts"
+import io, { router } from "./server.ts"
+
+type CreateRoomRequestPayloadType = {
+  roomKey: string,
+  host: string,
+  guests: string[]
+}
+
+
+
+
+router.post("/create", async(context) => {
+  const {
+    roomKey,
+    host,
+    guests
+  } = (await context.request.body({type: "json"}).value) as CreateRoomRequestPayloadType
+  await GameManager.createRoom(roomKey,host,guests)
+})
+
+async function joinRoom(socket: Socket, playerEmail: string, roomKey: string) {
+  const gameState = (await GameManager.getGameState(roomKey))?.flat()
+  if(gameState === undefined) {
+    socket.emit("joinFailed", {msg: "invalid room"})
+    return;
+  } else {
+    socket.join(roomKey)
+    socket.emit("joinSucceed")
+    const isPlayable = gameState.players.map(({email}) => email).includes(playerEmail)
+    socket.emit("updateGameState", { fresh: true, gameState, isPlayable })
+  }
+}
+
 
 
 app.use((ctx) => {
   ctx.response.body = "Hello World!";
 });
+
+
 
 async function turnEnd(roomKey: string) {
   io.to(roomKey).emit("next")
@@ -80,58 +114,7 @@ async function checkDouble(roomKey: string, playerEmail: string, doubles_count: 
 function onConnected(socket: Socket) {
   console.log(socket.id + " is connected.");
 
-  socket.on("joinRoom",
-    async ({playerEmail, roomKey}: {playerEmail: string, roomKey: string} ) => {
-      socket.join(roomKey)
-      const [result,roomData] = await GameManager.createRoom(roomKey,playerEmail)
-      if (!result) {
-        const [joinResult, justGotFull] = await GameManager.registerGuest(roomKey,playerEmail)
-        if(joinResult === "already registered") {
-          const current_game_state: DBManager.GameStateType | undefined = (await GameManager.getGameState(roomKey))?.flat()
-          if(current_game_state !== undefined) {
-            const {
-              chances,
-              payments
-            } = await GameManager.getRoomQueue(roomKey)
-            if(roomData.isStarted) {
-              socket.emit("updateGameState", {fresh: true, gameState: current_game_state, rq: {chances,payments}})
-            }
-          }
-        }
-        else if(joinResult !== null) {
-          socket.emit("JoinFailed", {msg: joinResult as string})
-        }
-        else if (justGotFull) {
-          const initial_state = await GameManager.startGame(roomKey)
-          if(initial_state !== null) {
-            const {players, nowInTurn} = initial_state
-            io.to(roomKey).emit("updateGameState", {fresh: true, gameState: initial_state, rq: {
-              chances: {
-                queue: [] as string[],
-                processed: 0
-              }, 
-              payments: {
-                queue: [] as {
-                  cellId: number,
-                  mandatory: GameManager.PaymentTransactionJSON | null,
-                  optional: GameManager.PaymentTransactionJSON | null
-                }[],
-                processed: 0
-              }
-            }})
-            io.to(roomKey).emit("startGame")
-            io.to(roomKey).emit("turnBegin", {
-              playerNowEmail: players.filter(({icon}) => {
-                icon === nowInTurn
-              })[0].email,
-              doubles_count: 0,
-              askJailbreak: false
-            })
-          }
-        }
-      }
-    }
-  )
+  socket.on("joinRoom", async ({playerEmail, roomKey}: {playerEmail: string, roomKey: string}) => await joinRoom(socket,playerEmail,roomKey))
 
   socket.on("reportTransaction", async ({type, roomKey, playerEmail, cellId, amount, doubles_count, is_double} : {type: "construct", roomKey: string, playerEmail: string, cellId: number, amount: 1, doubles_count: number, is_double: boolean} | {type: "sell", roomKey: string, playerEmail: string, cellId: number, amount: 1 | 2 | 3, doubles_count: number, is_double: boolean }) => {
     const state = (await GameManager.getGameState(roomKey))?.flat()
