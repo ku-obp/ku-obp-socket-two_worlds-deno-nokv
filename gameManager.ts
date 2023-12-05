@@ -3,6 +3,8 @@ const INITIAL_CASH = 6000000;
 
 import db, { RoomDataType, GameStateType, generateLog } from "./dbManager.ts";
 
+import io from "./server.ts"
+
 import * as Utils from "./utils.ts"
 
 
@@ -561,14 +563,13 @@ export async function giveSalery(state: DBManager.GameStateType | null, playerEm
 
 
 import * as DBManager from "./dbManager.ts"
-import { Socket } from 'socket-io';
 
 const universityAction = (university: DBManager.UniversityStateType): DBManager.UniversityStateType => {
   if(university === "notYet") return "undergraduate"
   else return "graduated"
 }
 
-const jailAction = async (socket: Socket, roomKey: string, players: DBManager.PlayerType[], playerIdx_now: number) => {
+const jailAction = async (roomKey: string, players: DBManager.PlayerType[], playerIdx_now: number) => {
   const player_updates = Array.from(players)
         players[playerIdx_now].remainingJailTurns = ((remainingJailTurns) => {
           if(remainingJailTurns <= 0) {
@@ -581,7 +582,7 @@ const jailAction = async (socket: Socket, roomKey: string, players: DBManager.Pl
   setGameState(roomKey, {
     players: player_updates
   },(updated) => {
-    socket.to(roomKey).emit("updateGameState", {fresh: false, gameState: updated})
+    io.to(roomKey).emit("updateGameState", {fresh: false, gameState: updated})
   })
   const state_after = await getGameState(roomKey)
   if(state_after === null) {return null}
@@ -590,7 +591,7 @@ const jailAction = async (socket: Socket, roomKey: string, players: DBManager.Pl
 
 
 
-export const cellAction = async (socket: Socket, state: DBManager.GameStateType | null, playerEmail: string): Promise<DBManager.TaskType | null> => {
+export const cellAction = async (state: DBManager.GameStateType | null, playerEmail: string): Promise<DBManager.TaskType | null> => {
   if (state === null) {
     return null
   }
@@ -614,9 +615,9 @@ export const cellAction = async (socket: Socket, state: DBManager.GameStateType 
         // 랜덤 카드 뽑은 후, 그에 따른 액션을 수행하면서 카드 내용 표출
         const chanceId = randomChanceId()
         const chanceActionCallback: ChanceActionCallback = (q,c) => {
-          socket.to(roomKey).emit("syncQueue",{kind: "notifyChanceCardAcquistion", queues: q,payload: c})
+          io.to(roomKey).emit("syncQueue",{kind: "notifyChanceCardAcquistion", queues: q,payload: c})
         }
-        const state_after = await chanceAction(roomKey, socket, state, playerEmail, chanceId, chanceActionCallback)
+        const state_after = await chanceAction(roomKey,  state, playerEmail, chanceId, chanceActionCallback)
         return {
           state_after,
           cellType: type,
@@ -630,11 +631,11 @@ export const cellAction = async (socket: Socket, state: DBManager.GameStateType 
             dest: dest
           },(updated) => {
             setGameState(roomKey,updated,(_updated) => {
-              socket.to(roomKey).emit("updateGameState", {fresh: false, gameState: _updated})
+              io.to(roomKey).emit("updateGameState", {fresh: false, gameState: _updated})
             })
           },(updated) => {
             setGameState(roomKey,updated,(_updated) => {
-              socket.to(roomKey).emit("updateGameState", {fresh: false, gameState: _updated})
+              io.to(roomKey).emit("updateGameState", {fresh: false, gameState: _updated})
             })
           })
           return {
@@ -654,7 +655,7 @@ export const cellAction = async (socket: Socket, state: DBManager.GameStateType 
           }
         })(state.players)
         setGameState(roomKey,updates,(updated) => {
-          socket.to(roomKey).emit("updateGameState", {fresh: false, gameState: updated})
+          io.to(roomKey).emit("updateGameState", {fresh: false, gameState: updated})
         })
         const state_after = Utils.nullableMapper(await getGameState(roomKey), (state_wrapped) => state_wrapped.flat(),{mapNullIsGenerator: false, constant: null})
         return {
@@ -664,7 +665,7 @@ export const cellAction = async (socket: Socket, state: DBManager.GameStateType 
         }
       }
     } else if(type === "jail") {
-      const state_after = await jailAction(socket,roomKey,state.players,playerIdx_now)
+      const state_after = await jailAction(roomKey,state.players,playerIdx_now)
       
       return {
         state_after,
@@ -676,7 +677,7 @@ export const cellAction = async (socket: Socket, state: DBManager.GameStateType 
       const [mandatory, optional] = [p.mandatory ?? null, p.optional ?? null]
 
       const paymentsActionCallback: PaymentsActionCallback = (q,p) => {
-        socket.to(roomKey).emit("syncQueue",{kind: "notifyPayments", queues: q,payload: {
+        io.to(roomKey).emit("syncQueue",{kind: "notifyPayments", queues: q,payload: {
           type, name: cell.name,maxBuildable: cell.maxBuildable, invoices: p
         }})
       }

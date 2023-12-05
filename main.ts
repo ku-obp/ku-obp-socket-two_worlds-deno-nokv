@@ -1,5 +1,5 @@
 import { Application } from "oak"
-import {Server, Socket} from "socket-io"
+import { Socket } from "socket-io"
 
 import * as DBManager from "./dbManager.ts"
 
@@ -8,22 +8,16 @@ import { serve } from "http";
 
 
 const app = new Application();
-const io = new Server({
-  cors: {
-    origin: ["https://ku-obp.vercel.app", "http://localhost:3000"],
-    methods: ["GET", "POST"],
-    allowedHeaders: ["Content-Type", "Authorization"],
-    credentials: true
-  }
-});
+
+import io from "./server.ts"
 
 
 app.use((ctx) => {
   ctx.response.body = "Hello World!";
 });
 
-async function turnEnd(socket: Socket, roomKey: string) {
-  socket.to(roomKey).emit("next")
+async function turnEnd(roomKey: string) {
+  io.to(roomKey).emit("next")
 
   const state = await GameManager.getGameState(roomKey)
     if(state === null) {
@@ -52,16 +46,16 @@ async function turnEnd(socket: Socket, roomKey: string) {
     await GameManager.setGameState(roomKey,{
       nowInTurn
     }, (updated) => {
-      socket.to(roomKey).emit("updateGameState", {fresh: false, gameState: updated})
+      io.to(roomKey).emit("updateGameState", {fresh: false, gameState: updated})
     })
     
 
     if(Math.min(...(new_state.players.map(({cycles}) => cycles))) >= 4) {
       const overall_finances = await GameManager.endGame(roomKey)
-      socket.to(roomKey).emit("endGame", overall_finances)
+      io.to(roomKey).emit("endGame", overall_finances)
     }
     else {
-      socket.to(roomKey).emit("turnBegin", {
+      io.to(roomKey).emit("turnBegin", {
         playerNowEmail: now.email,
         doubles_count: 0,
         askJailbreak: (now.remainingJailTurns > 0)
@@ -70,16 +64,16 @@ async function turnEnd(socket: Socket, roomKey: string) {
 }
 
 
-async function checkDouble(socket: Socket, roomKey: string, playerEmail: string, doubles_count: number, is_double: boolean) {
+async function checkDouble(roomKey: string, playerEmail: string, doubles_count: number, is_double: boolean) {
   if((doubles_count < 3) && is_double) {
-    socket.to(roomKey).emit("turnBegin",{
+    io.to(roomKey).emit("turnBegin",{
       playerNowEmail: playerEmail,
       doubles_count: doubles_count + 1,
       askJailbreak: false
     })
   }
   else {
-    await turnEnd(socket,roomKey)
+    await turnEnd(roomKey)
   }
 }
 
@@ -111,7 +105,7 @@ function onConnected(socket: Socket) {
           const initial_state = await GameManager.startGame(roomKey)
           if(initial_state !== null) {
             const {players, nowInTurn} = initial_state
-            socket.to(roomKey).emit("updateGameState", {fresh: true, gameState: initial_state, rq: {
+            io.to(roomKey).emit("updateGameState", {fresh: true, gameState: initial_state, rq: {
               chances: {
                 queue: [] as string[],
                 processed: 0
@@ -125,7 +119,8 @@ function onConnected(socket: Socket) {
                 processed: 0
               }
             }})
-            socket.to(roomKey).emit("turnBegin", {
+            io.to(roomKey).emit("startGame")
+            io.to(roomKey).emit("turnBegin", {
               playerNowEmail: players.filter(({icon}) => {
                 icon === nowInTurn
               })[0].email,
@@ -151,7 +146,7 @@ function onConnected(socket: Socket) {
     }, (updated) => {
       socket.emit("updateGameState", {fresh: false, gameState: updated})
     })
-    checkDouble(socket,roomKey,playerEmail, doubles_count,is_double)
+    await checkDouble(roomKey,playerEmail, doubles_count,is_double)
   })
 
   socket.on("requestBasicIncome", async (roomKey: string) => {
@@ -167,7 +162,7 @@ function onConnected(socket: Socket) {
         players: after.players,
         govIncome: after.government_income
       }, (updated) => {
-        socket.to(roomKey).emit("updateGameState", {fresh: false, gameState: updated})
+        io.to(roomKey).emit("updateGameState", {fresh: false, gameState: updated})
       })
     }
   })
@@ -188,15 +183,15 @@ function onConnected(socket: Socket) {
       await GameManager.setGameState(roomKey,{
         players
       }, (updated) => {
-        socket.to(roomKey).emit("updateGameState", {fresh: false, gameState: updated})
+        io.to(roomKey).emit("updateGameState", {fresh: false, gameState: updated})
       })
-      turnEnd(socket,roomKey)
+      turnEnd(roomKey)
     }
   })
 
 
   socket.on("reportRollDiceResult", async ({roomKey, playerEmail, dice1, dice2, doubles_count = 0, flag_jailbreak = false}: {roomKey: string, playerEmail: string, dice1: number, dice2: number, doubles_count: number, flag_jailbreak: boolean}) => {
-    socket.to(roomKey).emit("showDiceValues", {dice1, dice2})
+    io.to(roomKey).emit("showDiceValues", {dice1, dice2})
     
     const state = await GameManager.getGameState(roomKey);
     if(state === null) {
@@ -216,17 +211,17 @@ function onConnected(socket: Socket) {
         amount: dice1 + dice2
       },(updated) => {
         GameManager.setGameState(roomKey,updated,(_updated) => {
-          socket.to(roomKey).emit("updateGameState", {fresh: false, gameState: _updated})
+          io.to(roomKey).emit("updateGameState", {fresh: false, gameState: _updated})
         })
       },(updated) => {
         GameManager.setGameState(roomKey,updated,(_updated) => {
-          socket.to(roomKey).emit("updateGameState", {fresh: false, gameState: _updated})
+          io.to(roomKey).emit("updateGameState", {fresh: false, gameState: _updated})
         })
       })
       if (can_get_salery) {
         state_before_cell_action = await GameManager.giveSalery(state_after_move,playerEmail,flat.govIncome, (updated) => {
           GameManager.setGameState(roomKey,updated, (_updated) => {
-            socket.to(roomKey).emit("updateGameState", {fresh: false, gameState: _updated})
+            io.to(roomKey).emit("updateGameState", {fresh: false, gameState: _updated})
           })
         })
       }
@@ -235,13 +230,13 @@ function onConnected(socket: Socket) {
       }
 
       // 도착한 곳에 따른 액션 수행
-      const task = await GameManager.cellAction(socket,state_before_cell_action,playerEmail)
+      const task = await GameManager.cellAction(state_before_cell_action,playerEmail)
       if(task === null) {
         return;
       }
 
       if(task.turn_finished) {
-        await checkDouble(socket,roomKey,playerEmail,doubles_count,(dice1 === dice2))
+        await checkDouble(roomKey,playerEmail,doubles_count,(dice1 === dice2))
       }
     } else {
       const remainingJailTurns = ((remaining, isDouble) => {
@@ -255,7 +250,7 @@ function onConnected(socket: Socket) {
       GameManager.setGameState(roomKey,{
         players
       },(updated) => {
-        socket.to(roomKey).emit("updateGameState", {fresh: false, gameState: updated})
+        io.to(roomKey).emit("updateGameState", {fresh: false, gameState: updated})
       })
       socket.emit("checkJailbreak", {remainingJailTurns})
     }
