@@ -48,6 +48,8 @@ app.use((ctx) => {
   ctx.response.body = "Hello World!";
 });
 
+app.use(router.routes())
+app.use(router.allowedMethods())
 
 
 async function turnEnd(roomKey: string) {
