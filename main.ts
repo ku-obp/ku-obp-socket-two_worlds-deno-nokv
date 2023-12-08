@@ -6,6 +6,8 @@ import * as DBManager from "./dbManager.ts"
 import * as GameManager from "./gameManager.ts"
 import { serve } from "http";
 
+import { oakCors } from "https://deno.land/x/cors@v1.2.2/mod.ts"
+
 
 const app = new Application();
 
@@ -13,8 +15,10 @@ import io, { router } from "./server.ts"
 
 type CreateRoomRequestPayloadType = {
   roomKey: string,
-  host: string,
-  guests: string[]
+  player1: string,
+  player2: string,
+  player3: string,
+  player4: string
 }
 
 
@@ -23,10 +27,12 @@ type CreateRoomRequestPayloadType = {
 router.post("/create", async(context) => {
   const {
     roomKey,
-    host,
-    guests
+    player1,
+    player2,
+    player3,
+    player4
   } = (await context.request.body({type: "json"}).value) as CreateRoomRequestPayloadType
-  await GameManager.createRoom(roomKey,host,guests)
+  await GameManager.createRoom(roomKey,player1,player2, player3, player4)
 })
 
 async function joinRoom(socket: Socket, playerEmail: string, roomKey: string) {
@@ -47,6 +53,13 @@ async function joinRoom(socket: Socket, playerEmail: string, roomKey: string) {
 app.use((ctx) => {
   ctx.response.body = "Hello World!";
 });
+
+app.use(oakCors({
+  origin: ["https://ku-obp.vercel.app", "http://localhost:3000"],
+  methods: ["GET", "POST"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+  credentials: true
+}))
 
 app.use(router.routes())
 app.use(router.allowedMethods())

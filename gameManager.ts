@@ -8,12 +8,13 @@ import io from "./server.ts"
 import * as Utils from "./utils.ts"
 
 
-export async function createRoom(roomKey: string, hostEmail: string, guests: string[]) {
-  const shuffled= shuffle([hostEmail].concat(guests.slice(0,3)))
+export async function createRoom(roomKey: string, ...players: string[]) {
+  const guests = players.slice(1,undefined)
+  const shuffled= shuffle(Array.from(players))
   await db.roomData.set(roomKey, {
     roomKey,
-    hostEmail,
-    guests,
+    hostEmail: players[0],
+    guests: guests,
     maxGuests: guests.length,
     isStarted: true,
     isEnded: false
