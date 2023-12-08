@@ -108,7 +108,7 @@ export function endGame(roomId: string) {
     const state = getGameState(roomId)
     const copied = deepcopyGameState(state)
     const overall_finances = calculateOverallFinances(copied.players,copied.properties)
-    removeRoom(roomId)
+    DBManager.roomData[roomId].isEnded = true
     return overall_finances
 }
 
