@@ -9,6 +9,8 @@ import { serve } from "http";
 import { oakCors } from "https://deno.land/x/cors@v1.2.2/mod.ts"
 
 
+type DiceType = 1 | 2 | 3 | 4 | 5 | 6
+
 const app = new Application();
 
 import io, { router } from "./server.ts"
@@ -188,7 +190,7 @@ function onConnected(socket: Socket) {
   })
 
 
-  socket.on("reportRollDiceResult", async ({roomKey, playerEmail, dice1, dice2, doubles_count = 0, flag_jailbreak = false}: {roomKey: string, playerEmail: string, dice1: number, dice2: number, doubles_count: number, flag_jailbreak: boolean}) => {
+  socket.on("reportRollDiceResult", async ({roomKey, playerEmail, dice1, dice2, doubles_count = 0, flag_jailbreak = false}: {roomKey: string, playerEmail: string, dice1: DiceType, dice2: DiceType, doubles_count: number, flag_jailbreak: boolean}) => {
     io.to(roomKey).emit("showDiceValues", {dice1, dice2})
     
     const state = await GameManager.getGameState(roomKey);
@@ -206,7 +208,7 @@ function onConnected(socket: Socket) {
       const {can_get_salery, state_after_move} = await GameManager.movePlayer(flat,idx,{
         kind: "forward",
         type: "byAmount",
-        amount: dice1 + dice2
+        amount: (dice1 as number) + (dice2 as number)
       },(updated) => {
         GameManager.setGameState(roomKey,updated,(_updated) => {
           io.to(roomKey).emit("updateGameState", {fresh: false, gameState: _updated})
