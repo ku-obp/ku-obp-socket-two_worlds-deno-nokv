@@ -27,14 +27,15 @@ type CreateRoomRequestPayloadType = {
 
 
 router.post("/create", async(context) => {
+  const bodyText = (await context.request.body({type: "text"}).value)
   const {
     roomKey,
     player1,
     player2,
     player3,
     player4
-  } = (await context.request.body({type: "json"}).value) as CreateRoomRequestPayloadType
-  await GameManager.createRoom(roomKey,player1,player2, player3, player4)
+  } = JSON.parse(bodyText)
+  await GameManager.createRoom(roomKey as string, player1 as string, player2 as string, player3 as string, player4 as string)
 })
 
 async function joinRoom(socket: Socket, playerEmail: string, roomKey: string) {
