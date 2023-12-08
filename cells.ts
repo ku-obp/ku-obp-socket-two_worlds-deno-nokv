@@ -454,10 +454,10 @@ export type PaymentsActionCallback = ({chances, payments}: {chances: {queue: str
 }) => void
 
 
-export async function chanceAction(roomKey: string, state: DBManager.GameStateType, playerEmail: string, chanceId: string, callback: ChanceActionCallback) {
+export async function chanceAction(roomId: string, state: DBManager.GameStateType, playerEmail: string, chanceId: string, callback: ChanceActionCallback) {
     const {description, displayName, action} = CHANCE_CARDS[chanceId]
     const state_after = await action(state,playerEmail)
-    GameManager.safeEnqueueChance(roomKey,chanceId,(q) => callback(q,{description,displayName}))
+    GameManager.safeEnqueueChance(roomId,chanceId,(q) => callback(q,{description,displayName}))
     return state_after
 }
 
@@ -468,7 +468,7 @@ export const CHANCE_CARDS: {
         description: "복권 당첨을 축하드립니다! 100만원을 받습니다.",
         displayName: "복권당첨",
         action: async ( state, playerEmail) => {
-            const roomKey = state.roomKey
+            const roomId = state.roomId
             const player_updates: DBManager.PlayerType[] = []
             for(const player of state.players) {
                 player_updates.push({
@@ -476,12 +476,12 @@ export const CHANCE_CARDS: {
                     cash: player.cash + ((player.email === playerEmail) ? 1000000 : 0)
                 })
             }
-            GameManager.setGameState(roomKey, {
+            GameManager.setGameState(roomId, {
                 players: player_updates
             },(updated) => {
-                io.to(roomKey).emit("updateGameState", {fresh: false, gameState: updated})
+                io.to(roomId).emit("updateGameState", {fresh: false, gameState: updated})
             })
-            const state_after = await GameManager.getGameState(roomKey)
+            const state_after = await GameManager.getGameState(roomId)
             if(state_after === null) return null
             else return state_after.flat()
         },
@@ -491,7 +491,7 @@ export const CHANCE_CARDS: {
         description: "특별한 당신, 장학금을 받기까지 참 열심히 살았습니다. 수고 많았습니다. 대학(원)으로갑니다. (수업료 무료)",
         displayName: "장학금",
         action: async (state, playerEmail) => {
-            const roomKey = state.roomKey
+            const roomId = state.roomId
             const playerIdx = state.players.findIndex((player) => player.email === playerEmail)
             if(playerIdx < 0) {
                 return null
@@ -501,15 +501,15 @@ export const CHANCE_CARDS: {
                 type: "navigateTo",
                 dest: University.UniversityCell.cellId
             },(updated) => {
-                GameManager.setGameState(roomKey,updated,(_updated) => {
-                    io.to(roomKey).emit("updateGameState", {fresh: false, gameState: _updated})
+                GameManager.setGameState(roomId,updated,(_updated) => {
+                    io.to(roomId).emit("updateGameState", {fresh: false, gameState: _updated})
                 })
             },(updated) => {
-                GameManager.setGameState(roomKey,updated,(_updated) => {
-                    io.to(roomKey).emit("updateGameState", {fresh: false, gameState: _updated})
+                GameManager.setGameState(roomId,updated,(_updated) => {
+                    io.to(roomId).emit("updateGameState", {fresh: false, gameState: _updated})
                 })
             })
-            const state_after = await GameManager.getGameState(roomKey)
+            const state_after = await GameManager.getGameState(roomId)
             if(state_after === null) return null
             else return state_after.flat()
         },
@@ -519,7 +519,7 @@ export const CHANCE_CARDS: {
         description: "경기부양을 위해 소비 진작 할인쿠폰이 발행되었습니다. 토지/건물 사용료 50% 감면받습니다.",
         displayName: "임대료 감면",
         action: async ( state, playerEmail) => {
-            const roomKey = state.roomKey
+            const roomId = state.roomId
             const player_updates: DBManager.PlayerType[] = []
             for(const player of state.players) {
                 if (player.email === playerEmail) {
@@ -534,12 +534,12 @@ export const CHANCE_CARDS: {
                     player_updates.push(player)
                 }
             }
-            GameManager.setGameState(roomKey, {
+            GameManager.setGameState(roomId, {
                 players: player_updates
             },(updated) => {
-                io.to(roomKey).emit("updateGameState", {fresh: false, gameState: updated})
+                io.to(roomId).emit("updateGameState", {fresh: false, gameState: updated})
             })
-            const state_after = await GameManager.getGameState(roomKey)
+            const state_after = await GameManager.getGameState(roomId)
             if(state_after === null) return null
             else return state_after.flat()   
         },
@@ -549,7 +549,7 @@ export const CHANCE_CARDS: {
         description: "회사가 증권시장에 상장되었습니다. 다음 차례 출발지를 지나갈 때 성과급 포함 2배의 급여를 받습니다.",
         displayName: "보너스 지급",
         action: async ( state, playerEmail) => {
-            const roomKey = state.roomKey
+            const roomId = state.roomId
             const player_updates: DBManager.PlayerType[] = []
             for(const player of state.players) {
                 if (player.email === playerEmail) {
@@ -564,12 +564,12 @@ export const CHANCE_CARDS: {
                     player_updates.push(player)
                 }
             }
-            GameManager.setGameState(roomKey, {
+            GameManager.setGameState(roomId, {
                 players: player_updates
             },(updated) => {
-                io.to(roomKey).emit("updateGameState", {fresh: false, gameState: updated})
+                io.to(roomId).emit("updateGameState", {fresh: false, gameState: updated})
             })
-            const state_after = await GameManager.getGameState(roomKey)
+            const state_after = await GameManager.getGameState(roomId)
             if(state_after === null) return null
             else return state_after.flat()   
         },
@@ -579,7 +579,7 @@ export const CHANCE_CARDS: {
         description: "복권 게임 시 당첨금 2배가 됩니다.",
         displayName: "곱빼기 복권",
         action: async ( state, playerEmail) => {
-            const roomKey = state.roomKey
+            const roomId = state.roomId
             const player_updates: DBManager.PlayerType[] = []
             for(const player of state.players) {
                 if (player.email === playerEmail) {
@@ -594,12 +594,12 @@ export const CHANCE_CARDS: {
                     player_updates.push(player)
                 }
             }
-            GameManager.setGameState(roomKey, {
+            GameManager.setGameState(roomId, {
                 players: player_updates
             },(updated) => {
-                io.to(roomKey).emit("updateGameState", {fresh: false, gameState: updated})
+                io.to(roomId).emit("updateGameState", {fresh: false, gameState: updated})
             })
-            const state_after = await GameManager.getGameState(roomKey)
+            const state_after = await GameManager.getGameState(roomId)
             if(state_after === null) return null
             else return state_after.flat()   
         },
@@ -609,15 +609,15 @@ export const CHANCE_CARDS: {
         description: "부동산투기가 심각합니다. 전면적인 임대료 통제정책이 시행됩니다. 1턴 동안 임대료가 면제됩니다.",
         displayName: "임대료 통제",
         action: async ( state, _playerEmail) => {
-            const roomKey = state.roomKey
-            GameManager.setGameState(roomKey,{
+            const roomId = state.roomId
+            GameManager.setGameState(roomId,{
                 sidecars: {
                     limitRents: state.sidecars.limitRents + 4
                 }
             },(updated) => {
-                io.to(roomKey).emit("updateGameState", {fresh: false, gameState: updated})
+                io.to(roomId).emit("updateGameState", {fresh: false, gameState: updated})
             })
-            const state_after = await GameManager.getGameState(roomKey)
+            const state_after = await GameManager.getGameState(roomId)
             if(state_after === null) return null
             else return state_after.flat()   
         },

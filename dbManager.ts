@@ -1,5 +1,5 @@
 /// <reference lib="deno.unstable" />
-const kv = (Deno.env.get("DENO_KV_ACCESS_TOKEN") !== undefined) ? await Deno.openKv("https://ku-obp-socket-two-worlds-deno-flyio.fly.dev/") : await Deno.openKv()
+const kv = (Deno.env.get("DENO_KV_ACCESS_TOKEN") === "hwfijkyyppfwy3zt2y877wl0qlq4m1r7") ? await Deno.openKv("https://ku-obp-socket-two-worlds-deno-flyio.fly.dev/") : await Deno.openKv()
 
  
 
@@ -9,7 +9,7 @@ import { PaymentTransactionJSON } from './gameManager.ts';
 export type PlayerIconType = 0 | 1 | 2 | 3
 
 export type RoomDataType = {
-    roomKey: string;
+    roomId: string;
     hostEmail: string;
     maxGuests: number;
     guests: string[];
@@ -42,7 +42,7 @@ export type PropertyType = {
 }
 
 export type GameStateType = {
-    roomKey: string,
+    roomId: string,
     players: PlayerType[],
     properties: PropertyType[],
     nowInTurn: number,
@@ -67,7 +67,7 @@ export function generateLog(message: string): LogType {
 
 
 export type RoomLogsType = {
-    roomKey: string,
+    roomId: string,
     logs: LogType[]
 }
 
@@ -86,7 +86,7 @@ export type TaskType = {
     turn_finished: boolean
 }
 export type RoomQueueType = {
-    roomKey: string,
+    roomId: string,
     chances: {
         queue: string[],
         processed: number
@@ -103,12 +103,12 @@ export type RoomQueueType = {
 
 export type DiceType = 0 | 1 | 2 | 3 | 4 | 5 | 6
 export type RoomDoublesCountType = {
-    roomKey: string,
+    roomId: string,
     count: number
 }
 
 export type RoomDicesType = {
-    roomKey: string,
+    roomId: string,
     dice1: DiceType,
     dice2: DiceType
 }
@@ -126,37 +126,37 @@ const RoomDicesModel = model<RoomDicesType>();
 const db = kvdex(kv,{
     gameState: collection(GameStateModel, {
         indices: {
-            roomKey: "primary"
+            roomId: "primary"
         },
         serialize: "json"
     }),
     roomData: collection(RoomDataModel, {
         indices: {
-            roomKey: "primary"
+            roomId: "primary"
         },
         serialize: "json"
     }),
     roomLogs: collection(RoomLogsModel, {
         indices: {
-            roomKey: "primary"
+            roomId: "primary"
         },
         serialize: "json"
     }),
     roomQueue: collection(RoomQueueModel, {
         indices: {
-            roomKey: "primary"
+            roomId: "primary"
         },
         serialize: "json"
     }),
     roomDouble: collection(RoomDoublesCountModel, {
         indices: {
-            roomKey: "primary"
+            roomId: "primary"
         },
         serialize: "json"
     }),
     roomDices: collection(RoomDicesModel, {
         indices: {
-            roomKey: "primary"
+            roomId: "primary"
         },
         serialize: "json"
     })
