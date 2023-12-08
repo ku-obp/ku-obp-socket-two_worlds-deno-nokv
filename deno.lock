@@ -22,9 +22,6 @@
       }
     }
   },
-  "redirects": {
-    "https://deno.land/x/cors/mod.ts": "https://deno.land/x/cors@v1.2.2/mod.ts"
-  },
   "remote": {
     "https://deno.land/std@0.150.0/_util/assert.ts": "e94f2eb37cebd7f199952e242c77654e43333c1ac4c5c700e929ea3aa5489f74",
     "https://deno.land/std@0.150.0/async/abortable.ts": "87aa7230be8360c24ad437212311c9e8d4328854baec27b4c7abb26e85515c06",
@@ -213,6 +210,14 @@
     "https://deno.land/x/abortable@1.6/abort.ts": "953706edbe37f329408d13b6c92d4c43e40a13823cb6948e9b26387be1bb8352",
     "https://deno.land/x/abortable@1.6/mod.ts": "206397cea8d4eb5c9f09933a03f06ac1986ff9a409808e806dbca2f366334ff1",
     "https://deno.land/x/abortable@1.6/type.ts": "225c45696fc84fd820a78bf76eb17c030f0976e7bf002d3d22d5f3cb7b75dd7f",
+    "https://deno.land/x/cors@v1.2.2/abcCors.ts": "cdf83a7eaa69a1bf3ab910d18b9422217902fac47601adcaf0afac5a61845d48",
+    "https://deno.land/x/cors@v1.2.2/attainCors.ts": "7d6aba0f942495cc31119604e0895c9bb8edd8f8baa7fe78e6c655bd0b4cbf59",
+    "https://deno.land/x/cors@v1.2.2/cors.ts": "0e2d9167e3685f9bcf48f565e312b6e1883fa458f7337e5ce7bc2e3b29767980",
+    "https://deno.land/x/cors@v1.2.2/mithCors.ts": "3a359d6e716e0410ede278ab54d875b293a2d66d838aaa7cfbf9ddc1e9e990d3",
+    "https://deno.land/x/cors@v1.2.2/mod.ts": "2b351913f56d77ad80cb3b8633d4539c9eeddb426dae79437ada0e6a9cb4f1a6",
+    "https://deno.land/x/cors@v1.2.2/oakCors.ts": "1348dc7673c61b85d2e80559a7b44f8e0246eaa6bcc6ec744fafe5d9b13b5c71",
+    "https://deno.land/x/cors@v1.2.2/opineCors.ts": "fb5790115c26b7061d84b8d6c17d258a1e241bcab75b0bc3ca1fdb2e57bc5072",
+    "https://deno.land/x/cors@v1.2.2/types.ts": "97546633ccc7f0df7a29bacba5d91dc6f61decdd1b65258300244dba905d34b8",
     "https://deno.land/x/kvdex@v0.25.0/mod.ts": "159bae11224b0cbe723af1560eb05d92e5ada450b7a9372968b084b96b427f48",
     "https://deno.land/x/kvdex@v0.25.0/src/atomic_builder.ts": "a15fb58990571675061219b6d76c461373a50014943ebb3dbf730efaa3203350",
     "https://deno.land/x/kvdex@v0.25.0/src/atomic_wrapper.ts": "2e0efced307ddbe5f64fee9a9a358733676847081354fecfb1922e081ae518a6",
