@@ -425,7 +425,8 @@ export default PREDEFINED_CELLS
 type ChanceCard = {
     description: string,
     displayName: string,
-    action: (state: DBManager.GameStateType, playerEmail: string) => Promise<DBManager.GameStateType | null>
+    action: (state: DBManager.GameStateType, playerEmail: string) => Promise<DBManager.GameStateType | null>,
+    isMoving: boolean
 }
 
 export const CHANCE_IDS = [
@@ -460,16 +461,6 @@ export async function chanceAction(roomKey: string, state: DBManager.GameStateTy
     return state_after
 }
 
-import { nullableMapper } from "./utils.ts";
-
-export async function paymentAction(roomKey: string, state: DBManager.GameStateType, cellId: number, _mandatory: GameManager.PaymentTransaction | null, _optional: GameManager.PaymentTransaction | null, callback: PaymentsActionCallback) {
-    const state_after = state
-    const mandatory = nullableMapper(_mandatory,GameManager.PaymentTransaction.toJSON,{mapNullIsGenerator: false, constant: null})
-    const optional = nullableMapper(_optional,GameManager.PaymentTransaction.toJSON,{mapNullIsGenerator: false, constant: null})
-    await GameManager.safeEnqueuePayment(roomKey,cellId,{mandatory: _mandatory,optional: _optional},(q) => callback(q,{mandatory,optional}))
-    return state_after
-}
-
 export const CHANCE_CARDS: {
     [chanceId: string]: ChanceCard
 } = {
@@ -493,12 +484,13 @@ export const CHANCE_CARDS: {
             const state_after = await GameManager.getGameState(roomKey)
             if(state_after === null) return null
             else return state_after.flat()
-        }
+        },
+        isMoving: false
     },
     "scholarship": {
         description: "특별한 당신, 장학금을 받기까지 참 열심히 살았습니다. 수고 많았습니다. 대학(원)으로갑니다. (수업료 무료)",
         displayName: "장학금",
-        action: async ( state, playerEmail) => {
+        action: async (state, playerEmail) => {
             const roomKey = state.roomKey
             const playerIdx = state.players.findIndex((player) => player.email === playerEmail)
             if(playerIdx < 0) {
@@ -520,7 +512,8 @@ export const CHANCE_CARDS: {
             const state_after = await GameManager.getGameState(roomKey)
             if(state_after === null) return null
             else return state_after.flat()
-        }
+        },
+        isMoving: true
     },
     "discountRent": {
         description: "경기부양을 위해 소비 진작 할인쿠폰이 발행되었습니다. 토지/건물 사용료 50% 감면받습니다.",
@@ -549,7 +542,8 @@ export const CHANCE_CARDS: {
             const state_after = await GameManager.getGameState(roomKey)
             if(state_after === null) return null
             else return state_after.flat()   
-        }
+        },
+        isMoving: false
     },
     "bonus": {
         description: "회사가 증권시장에 상장되었습니다. 다음 차례 출발지를 지나갈 때 성과급 포함 2배의 급여를 받습니다.",
@@ -578,7 +572,8 @@ export const CHANCE_CARDS: {
             const state_after = await GameManager.getGameState(roomKey)
             if(state_after === null) return null
             else return state_after.flat()   
-        }
+        },
+        isMoving: false
     },
     "doubleLotto": {
         description: "복권 게임 시 당첨금 2배가 됩니다.",
@@ -607,7 +602,8 @@ export const CHANCE_CARDS: {
             const state_after = await GameManager.getGameState(roomKey)
             if(state_after === null) return null
             else return state_after.flat()   
-        }
+        },
+        isMoving: false
     },
     "limitRents": {
         description: "부동산투기가 심각합니다. 전면적인 임대료 통제정책이 시행됩니다. 1턴 동안 임대료가 면제됩니다.",
@@ -624,7 +620,8 @@ export const CHANCE_CARDS: {
             const state_after = await GameManager.getGameState(roomKey)
             if(state_after === null) return null
             else return state_after.flat()   
-        }
+        },
+        isMoving: false
     }
 }
 

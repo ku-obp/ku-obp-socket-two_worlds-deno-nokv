@@ -59,7 +59,52 @@ export async function initializeGame(roomKey: string, shuffled: string[]) {
     }
   }
   await db.gameState.set(roomKey,initial_state)
+  await db.roomDouble.set(roomKey,{
+    roomKey,
+    count: 0
+  })
 }  
+
+export async function getDoubles(roomKey: string) {
+  return(await db.roomDouble.find(roomKey))?.flat().count
+}
+
+export async function tryCommitDoubles(roomKey: string) {
+  const doubles_count = await getDoubles(roomKey)
+  let new_doubles_count = 0
+  if(doubles_count === undefined) {
+    await db.roomDouble.set(roomKey, {
+      roomKey,
+      count: 1
+    })
+    new_doubles_count = 1
+  } else {
+    if(doubles_count < 3) {
+      await db.roomDouble.update(roomKey, {
+        count: Math.min(Math.max(0,doubles_count + 1), 3)
+      })
+      new_doubles_count = doubles_count + 1
+    } else {
+      new_doubles_count = 0
+    }
+  }
+  io.to(roomKey).emit("refreshDoubles", new_doubles_count)
+  return new_doubles_count
+}
+
+
+export async function flushDoubles(roomKey: string) {
+  const doubles_count = await getDoubles(roomKey)
+  if(doubles_count === undefined) {
+    return;
+  } else {
+    await db.roomDouble.update(roomKey, {
+      count: 0
+    })
+  }
+  io.to(roomKey).emit("refreshDoubles", 0)
+}
+
 
 function joinFinances(players: DBManager.PlayerType[], properties: DBManager.PropertyType[]): {
   playerEmail: string,
@@ -897,5 +942,30 @@ export function tryDeconstruct(players: DBManager.PlayerType[], properties: DBMa
     return [players_after, properties_after]
   } else {
     return [Array.from(players), Array.from(properties)]
+  }
+}
+
+
+export async function setDices(roomKey: string, dices: {dice1: 1 | 2 | 3 | 4 | 5 | 6, dice2: 1 | 2 | 3 | 4 | 5 | 6} | undefined) {
+  if(dices === undefined) {
+    await db.roomDices.set(roomKey,{
+      roomKey,
+      dice1: 0,
+      dice2: 0
+    })
+  } else {
+    const {dice1, dice2} = dices
+    await db.roomDices.set(roomKey,{
+      roomKey,
+      dice1,
+      dice2
+    })
+  }
+}
+
+export async function getDices(roomKey: string) {
+  const {dice1, dice2} = (await db.roomDices.find(roomKey))?.flat() ?? {dice1: 0, dice2: 0}
+  return {
+    dice1, dice2
   }
 }

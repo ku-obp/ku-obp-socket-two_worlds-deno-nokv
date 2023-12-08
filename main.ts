@@ -9,7 +9,7 @@ import { serve } from "http";
 import { oakCors } from "https://deno.land/x/cors@v1.2.2/mod.ts"
 
 
-type DiceType = 1 | 2 | 3 | 4 | 5 | 6
+
 
 const app = new Application();
 
@@ -47,6 +47,10 @@ async function joinRoom(socket: Socket, playerEmail: string, roomKey: string) {
     socket.emit("joinSucceed")
     const isPlayable = gameState.players.map(({email}) => email).includes(playerEmail)
     socket.emit("updateGameState", { fresh: true, gameState, isPlayable })
+    const doubles_count = await GameManager.getDoubles(roomKey) ?? 0
+    socket.emit("refreshDoubles", doubles_count)
+    const dices = await GameManager.getDices(roomKey)
+    socket.emit("showDices", dices)
   }
 }
 
@@ -100,6 +104,7 @@ async function turnEnd(roomKey: string) {
       io.to(roomKey).emit("updateGameState", {fresh: false, gameState: updated})
     })
     
+    await GameManager.flushDoubles(roomKey)
 
     if(Math.min(...(new_state.players.map(({cycles}) => cycles))) >= 4) {
       const overall_finances = await GameManager.endGame(roomKey)
@@ -115,17 +120,22 @@ async function turnEnd(roomKey: string) {
 }
 
 
-async function checkDouble(roomKey: string, playerEmail: string, doubles_count: number, is_double: boolean) {
-  if((doubles_count < 3) && is_double) {
-    io.to(roomKey).emit("turnBegin",{
-      playerNowEmail: playerEmail,
-      doubles_count: doubles_count + 1,
-      askJailbreak: false
-    })
+async function checkDouble(roomKey: string, playerEmail: string) {
+  const is_double: boolean = (({dice1, dice2}) => {
+    return ((!(dice1 === 0 || dice2 === 0)) && (dice1 === dice2))
+  })(await GameManager.getDices(roomKey))
+  if(is_double) {
+    const new_doubles = await GameManager.tryCommitDoubles(roomKey)
+    if(new_doubles > 0) {
+      io.to(roomKey).emit("turnBegin",{
+        playerNowEmail: playerEmail,
+        doubles_count: new_doubles,
+        askJailbreak: false
+      })
+      return;
+    }
   }
-  else {
-    await turnEnd(roomKey)
-  }
+  await turnEnd(roomKey)
 }
 
 function onConnected(socket: Socket) {
@@ -133,7 +143,11 @@ function onConnected(socket: Socket) {
 
   socket.on("joinRoom", async ({playerEmail, roomKey}: {playerEmail: string, roomKey: string}) => await joinRoom(socket,playerEmail,roomKey))
 
-  socket.on("reportTransaction", async ({type, roomKey, playerEmail, cellId, amount, doubles_count, is_double} : {type: "construct", roomKey: string, playerEmail: string, cellId: number, amount: 1, doubles_count: number, is_double: boolean} | {type: "sell", roomKey: string, playerEmail: string, cellId: number, amount: 1 | 2 | 3, doubles_count: number, is_double: boolean }) => {
+  socket.on("skip", ({roomKey, playerEmail}: {roomKey: string, playerEmail: string}) => {
+    checkDouble(roomKey, playerEmail)
+  })
+
+  socket.on("reportTransaction", async ({type, roomKey, playerEmail, cellId, amount} : {type: "construct", roomKey: string, playerEmail: string, cellId: number, amount: 1} | {type: "sell", roomKey: string, playerEmail: string, cellId: number, amount: 1 | 2 | 3}) => {
     const state = (await GameManager.getGameState(roomKey))?.flat()
     if(state === undefined) {
       return;
@@ -146,7 +160,9 @@ function onConnected(socket: Socket) {
     }, (updated) => {
       socket.emit("updateGameState", {fresh: false, gameState: updated})
     })
-    await checkDouble(roomKey,playerEmail, doubles_count,is_double)
+    if(type === "construct") {
+      checkDouble(roomKey,playerEmail)
+    }
   })
 
   socket.on("requestBasicIncome", async (roomKey: string) => {
@@ -190,8 +206,10 @@ function onConnected(socket: Socket) {
   })
 
 
-  socket.on("reportRollDiceResult", async ({roomKey, playerEmail, dice1, dice2, doubles_count = 0, flag_jailbreak = false}: {roomKey: string, playerEmail: string, dice1: DiceType, dice2: DiceType, doubles_count: number, flag_jailbreak: boolean}) => {
-    io.to(roomKey).emit("showDiceValues", {dice1, dice2})
+  socket.on("reportRollDiceResult", async ({roomKey, playerEmail, dice1, dice2, flag_jailbreak = false}: {roomKey: string, playerEmail: string, dice1: DBManager.DiceType, dice2: DBManager.DiceType, flag_jailbreak: boolean}) => {
+    
+    
+    io.to(roomKey).emit("showDices", {dice1, dice2})
     
     const state = await GameManager.getGameState(roomKey);
     if(state === null) {
@@ -236,7 +254,15 @@ function onConnected(socket: Socket) {
       }
 
       if(task.turn_finished) {
-        await checkDouble(roomKey,playerEmail,doubles_count,(dice1 === dice2))
+        checkDouble(roomKey,playerEmail)
+      } else if(task.cellType === "chance") {
+        const task_by_chance = await GameManager.cellAction(task.state_after,playerEmail)
+        const state_after_chance = task_by_chance?.state_after
+        if(state_after_chance === undefined || state_after_chance === null) {
+          return
+        } else {
+          checkDouble(roomKey,playerEmail)
+        }
       }
     } else {
       const remainingJailTurns = ((remaining, isDouble) => {

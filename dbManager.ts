@@ -101,6 +101,18 @@ export type RoomQueueType = {
     }
 }
 
+export type DiceType = 0 | 1 | 2 | 3 | 4 | 5 | 6
+export type RoomDoublesCountType = {
+    roomKey: string,
+    count: number
+}
+
+export type RoomDicesType = {
+    roomKey: string,
+    dice1: DiceType,
+    dice2: DiceType
+}
+
 
 import { model, kvdex, collection } from "https://deno.land/x/kvdex@v0.25.0/mod.ts"
 
@@ -108,6 +120,8 @@ const RoomDataModel = model<RoomDataType>();
 const GameStateModel = model<GameStateType>();
 const RoomLogsModel = model<RoomLogsType>();
 const RoomQueueModel = model<RoomQueueType>();
+const RoomDoublesCountModel = model<RoomDoublesCountType>();
+const RoomDicesModel = model<RoomDicesType>();
 
 const db = kvdex(kv,{
     gameState: collection(GameStateModel, {
@@ -129,6 +143,18 @@ const db = kvdex(kv,{
         serialize: "json"
     }),
     roomQueue: collection(RoomQueueModel, {
+        indices: {
+            roomKey: "primary"
+        },
+        serialize: "json"
+    }),
+    roomDouble: collection(RoomDoublesCountModel, {
+        indices: {
+            roomKey: "primary"
+        },
+        serialize: "json"
+    }),
+    roomDices: collection(RoomDicesModel, {
         indices: {
             roomKey: "primary"
         },
