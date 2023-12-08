@@ -38,11 +38,12 @@ router.post("/create", async(context) => {
 })
 
 async function joinRoom(socket: Socket, playerEmail: string, roomKey: string) {
-  const gameState = (await GameManager.getGameState(roomKey))?.flat()
-  if(gameState === undefined) {
+  const _gameState = await GameManager.getGameState(roomKey)
+  if(_gameState === null) {
     socket.emit("joinFailed", {msg: "invalid room"})
     return;
   } else {
+    const gameState: DBManager.GameStateType = _gameState.flat()
     socket.join(roomKey)
     socket.emit("joinSucceed")
     const isPlayable = gameState.players.map(({email}) => email).includes(playerEmail)
