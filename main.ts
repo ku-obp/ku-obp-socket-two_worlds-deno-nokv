@@ -58,7 +58,7 @@ app.use((ctx) => {
 
 app.use(oakCors({
   origin: ["https://ku-obp.vercel.app", "http://localhost:3000"],
-  methods: ["GET", "POST"],
+  methods: ["GET", "POST", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization", "Access-Control-Allow-Origin"],
   credentials: true
 }))
