@@ -91,7 +91,7 @@ export class DBType{
         }
       }
     }
-    this._internal.set(roomId, room)
+    this._internal = this._internal.set(roomId, room)
   }
 
   public removeRoom(roomId: string) {
@@ -176,7 +176,7 @@ export class DBType{
       return;
     }
     const updated = DBType.overwrite(got,updates)
-    this._internal.set(roomId, updated)
+    this._internal = this._internal.set(roomId, updated)
     callback(updated)
   }
 
@@ -189,7 +189,7 @@ export class DBType{
     const updated = DBType.overwrite(got,{
       gameState: updatedState
     })
-    this._internal.set(roomId, updated)
+    this._internal = this._internal.set(roomId, updated)
     callback(updatedState)
     return updatedState
   }
@@ -202,7 +202,7 @@ export class DBType{
     const doubles_count = got.doublesCount
     const new_doubles_count = (doubles_count < 3) ? Math.min(Math.max(0,doubles_count + 1), 3) : 0
     got.doublesCount = new_doubles_count
-    this._internal.set(roomId, got)
+    this._internal = this._internal.set(roomId, got)
     return new_doubles_count
   }
 
@@ -212,7 +212,7 @@ export class DBType{
       return;
     }
     got.doublesCount = 0
-    this._internal.set(roomId, got)
+    this._internal = this._internal.set(roomId, got)
   }
 
   private static joinFinances(players: PlayerType[], properties: PropertyType[]): {
@@ -246,7 +246,7 @@ export class DBType{
     const copied = DBType.copyGameState(allState.gameState)
     const overall_finances = DBType.calculateOverallFinances(copied.players,copied.properties)
     allState.roomData.isEnded = true
-    this._internal.set(roomId,allState)
+    this._internal = this._internal.set(roomId,allState)
     return overall_finances
   }
 
