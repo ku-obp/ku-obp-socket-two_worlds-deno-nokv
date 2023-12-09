@@ -4,9 +4,13 @@ import { sample } from "$std/collections/mod.ts"
 
 import io from "./server.ts"
 
-import * as Manager from "./manager.ts"
+import DB, {GameStateType,PaymentTransaction, PaymentTransactionJSON,safeEnqueueChance, PropertyType, PlayerType,movePlayer,} from "./manager.ts"
 
 export type CellType = "infrastructure" | "industrial" | "land" | "lotto" | "charity" | "chance" | "transportation" | "hospital" | "park" | "concert" | "university" | "jail" | "start";
+
+
+import { sanitizeRoomId } from "./utils.ts";
+
 
 type CellDic = {
     [cell: string]: {
@@ -415,8 +419,6 @@ function gatherPredefined(): ICellData[] {
     return output.toSorted((a,b) => a.cellId - b.cellId);
 }
 
-import * as DBManager from "./manager.ts"
-
 
 const PREDEFINED_CELLS: ICellData[] = gatherPredefined();
 
@@ -425,7 +427,7 @@ export default PREDEFINED_CELLS
 type ChanceCard = {
     description: string,
     displayName: string,
-    action: (state: DBManager.GameStateType, playerEmail: string) => DBManager.GameStateType | null,
+    action: (state: GameStateType, playerEmail: string) => GameStateType | null,
     isMoving: boolean
 }
 
@@ -440,24 +442,24 @@ export const CHANCE_IDS = [
 
 export type ChanceActionCallback = ({chances, payments}: {chances: {queue: string[], processed: number}, payments: {queue: {
     cellId: number,
-    mandatory: Manager.PaymentTransactionJSON | null,
-    optional: Manager.PaymentTransactionJSON | null
+    mandatory: PaymentTransactionJSON | null,
+    optional: PaymentTransactionJSON | null
   }[], processed: number}}, {description, displayName}: {description: string, displayName: string}) => void
 
 export type PaymentsActionCallback = ({chances, payments}: {chances: {queue: string[], processed: number}, payments: {queue: {
     cellId: number,
-    mandatory: Manager.PaymentTransactionJSON | null,
-    optional: Manager.PaymentTransactionJSON | null
+    mandatory: PaymentTransactionJSON | null,
+    optional: PaymentTransactionJSON | null
   }[], processed: number}}, {mandatory, optional}:{
-    mandatory: Manager.PaymentTransactionJSON | null,
-    optional: Manager.PaymentTransactionJSON | null
+    mandatory: PaymentTransactionJSON | null,
+    optional: PaymentTransactionJSON | null
 }) => void
 
 
-export function chanceAction(roomId: string, state: DBManager.GameStateType, playerEmail: string, chanceId: string, callback: ChanceActionCallback) {
+export function chanceAction(roomId: string, state: GameStateType, playerEmail: string, chanceId: string, callback: ChanceActionCallback) {
     const {description, displayName, action} = CHANCE_CARDS[chanceId]
     const state_after = action(state,playerEmail)
-    Manager.safeEnqueueChance(roomId,chanceId,(q) => callback(q,{description,displayName}))
+    safeEnqueueChance(sanitizeRoomId(roomId),chanceId,(q) => callback(q,{description,displayName}))
     return state_after
 }
 
@@ -469,17 +471,18 @@ export const CHANCE_CARDS: {
         displayName: "복권당첨",
         action: ( state, playerEmail) => {
             const roomId = state.roomId
-            const player_updates: DBManager.PlayerType[] = []
+            const player_updates: PlayerType[] = []
             for(const player of state.players) {
                 player_updates.push({
                     ...player,
                     cash: player.cash + ((player.email === playerEmail) ? 1000000 : 0)
                 })
             }
-            const state_after = Manager.DBType.DB.updateGameState(roomId, {
+            const _roomId = sanitizeRoomId(roomId)
+            const state_after = DB.updateGameState(_roomId, {
                 players: player_updates
             },(updated) => {
-                io.to(roomId).emit("updateGameState", {fresh: false, gameState: updated})
+                io.to(_roomId).emit("updateGameState", {fresh: false, gameState: updated})
             })
             return state_after ?? null
         },
@@ -494,18 +497,20 @@ export const CHANCE_CARDS: {
             if(playerIdx < 0) {
                 return state
             }
-            let state_after: Manager.GameStateType | undefined
-            Manager.movePlayer(state,playerIdx,{
+            
+            const _roomId = sanitizeRoomId(roomId)
+            let state_after: GameStateType | undefined
+            movePlayer(state,playerIdx,{
                 kind: "forward",
                 type: "navigateTo",
                 dest: University.UniversityCell.cellId
             },(updated) => {
-                Manager.DBType.DB.updateGameState(roomId,updated,(_updated) => {
-                    io.to(roomId).emit("updateGameState", {fresh: false, gameState: _updated})
+                DB.updateGameState(_roomId,updated,(_updated) => {
+                    io.to(_roomId).emit("updateGameState", {fresh: false, gameState: _updated})
                 })
             },(updated) => {
-                state_after = Manager.DBType.DB.updateGameState(roomId,updated,(_updated) => {
-                    io.to(roomId).emit("updateGameState", {fresh: false, gameState: _updated})
+                state_after = DB.updateGameState(_roomId,updated,(_updated) => {
+                    io.to(_roomId).emit("updateGameState", {fresh: false, gameState: _updated})
                 })
             })
             return state_after ?? null
@@ -517,7 +522,7 @@ export const CHANCE_CARDS: {
         displayName: "임대료 감면",
         action: ( state, playerEmail ) => {
             const roomId = state.roomId
-            const player_updates: DBManager.PlayerType[] = []
+            const player_updates: PlayerType[] = []
             for(const player of state.players) {
                 if (player.email === playerEmail) {
                     player_updates.push({
@@ -531,10 +536,11 @@ export const CHANCE_CARDS: {
                     player_updates.push(player)
                 }
             }
-            const state_after = Manager.DBType.DB.updateGameState(roomId, {
+            const _roomId = sanitizeRoomId(roomId)
+            const state_after = DB.updateGameState(_roomId, {
                 players: player_updates
             },(updated) => {
-                io.to(roomId).emit("updateGameState", {fresh: false, gameState: updated})
+                io.to(_roomId).emit("updateGameState", {fresh: false, gameState: updated})
             })
             return state_after ?? null
         },
@@ -545,7 +551,7 @@ export const CHANCE_CARDS: {
         displayName: "보너스 지급",
         action: ( state, playerEmail) => {
             const roomId = state.roomId
-            const player_updates: DBManager.PlayerType[] = []
+            const player_updates: PlayerType[] = []
             for(const player of state.players) {
                 if (player.email === playerEmail) {
                     player_updates.push({
@@ -559,10 +565,11 @@ export const CHANCE_CARDS: {
                     player_updates.push(player)
                 }
             }
-            const state_after = Manager.DBType.DB.updateGameState(roomId, {
+            const _roomId = sanitizeRoomId(roomId)
+            const state_after = DB.updateGameState(_roomId, {
                 players: player_updates
             },(updated) => {
-                io.to(roomId).emit("updateGameState", {fresh: false, gameState: updated})
+                io.to(_roomId).emit("updateGameState", {fresh: false, gameState: updated})
             })
             return state_after ?? null
         },
@@ -573,7 +580,7 @@ export const CHANCE_CARDS: {
         displayName: "곱빼기 복권",
         action: ( state, playerEmail) => {
             const roomId = state.roomId
-            const player_updates: DBManager.PlayerType[] = []
+            const player_updates: PlayerType[] = []
             for(const player of state.players) {
                 if (player.email === playerEmail) {
                     player_updates.push({
@@ -587,10 +594,11 @@ export const CHANCE_CARDS: {
                     player_updates.push(player)
                 }
             }
-            const state_after = Manager.DBType.DB.updateGameState(roomId, {
+            const _roomId = sanitizeRoomId(roomId)
+            const state_after = DB.updateGameState(_roomId, {
                 players: player_updates
             },(updated) => {
-                io.to(roomId).emit("updateGameState", {fresh: false, gameState: updated})
+                io.to(_roomId).emit("updateGameState", {fresh: false, gameState: updated})
             })
             return state_after ?? null
         },
@@ -600,13 +608,13 @@ export const CHANCE_CARDS: {
         description: "부동산투기가 심각합니다. 전면적인 임대료 통제정책이 시행됩니다. 1턴 동안 임대료가 면제됩니다.",
         displayName: "임대료 통제",
         action: ( state, _playerEmail) => {
-            const roomId = state.roomId
-            const state_after = Manager.DBType.DB.updateGameState(roomId,{
+            const sanitizedRoomId = state.roomId
+            const state_after = DB.updateGameState(sanitizedRoomId,{
                 sidecars: {
                     limitRents: state.sidecars.limitRents + 4
                 }
             },(updated) => {
-                io.to(roomId).emit("updateGameState", {fresh: false, gameState: updated})
+                io.to(sanitizedRoomId).emit("updateGameState", {fresh: false, gameState: updated})
             })
             return state_after ?? null
         },
@@ -618,12 +626,12 @@ export function randomChanceId() {
     return sample(CHANCE_IDS) as string
 }
 
-export function transact<T extends ICellData>(playerEmail: string, players: DBManager.PlayerType[], properties: DBManager.PropertyType[], cell: T): {
-    mandatory?: Manager.PaymentTransaction,
-    optional?: Manager.PaymentTransaction
+export function transact<T extends ICellData>(playerEmail: string, players: PlayerType[], properties: PropertyType[], cell: T): {
+    mandatory?: PaymentTransaction,
+    optional?: PaymentTransaction
 } {
-    const mandatories: Manager.PaymentTransaction[] = []
-    const optionals: Manager.PaymentTransaction[] = []
+    const mandatories: PaymentTransaction[] = []
+    const optionals: PaymentTransaction[] = []
     const paymentInfos = Array.from(cell.paymentInfos)
     const playerIdx_now = players.findIndex((player) => player.email === playerEmail)
     if(playerIdx_now < 0) {
@@ -641,60 +649,60 @@ export function transact<T extends ICellData>(playerEmail: string, players: DBMa
         default:
             return {};
         case "industrial": {
-                const p2g_transactions: Manager.PaymentTransaction[] = []
+                const p2g_transactions: PaymentTransaction[] = []
                 for(const payment_info of paymentInfos) {
                     if(payment_info.kind === "P2G") {
-                        p2g_transactions.push(Manager.PaymentTransaction.P2G(players[playerIdx_now].icon,payment_info.cost.default))
+                        p2g_transactions.push(PaymentTransaction.P2G(players[playerIdx_now].icon,payment_info.cost.default))
                     }
                 }
-                mandatories.push(p2g_transactions.reduce(((acc, curr) => acc.merge(curr)), new Manager.PaymentTransaction({})))
+                mandatories.push(p2g_transactions.reduce(((acc, curr) => acc.merge(curr)), new PaymentTransaction({})))
                 if(owned) {
                     const ownerIdx = players.findIndex((player) => player.email === tmp.ownerEmail)
                     if(ownerIdx < 0) {
                         break;
                     }
                     
-                    const p2d_transactions: Manager.PaymentTransaction[] = []
+                    const p2d_transactions: PaymentTransaction[] = []
                     const players_count = players.length
                     for(const payment_info of paymentInfos) {
                         if(payment_info.kind === "P2D") {
                             for (const other of players.filter(({icon}) => icon !== players[playerIdx_now].icon)) {
-                                p2d_transactions.push(Manager.PaymentTransaction.P2P(players[playerIdx_now].icon,other.icon,(payment_info.cost.overall / players_count)))
+                                p2d_transactions.push(PaymentTransaction.P2P(players[playerIdx_now].icon,other.icon,(payment_info.cost.overall / players_count)))
                             }
                             if(playerIdx_now !== ownerIdx) {
-                                p2d_transactions.push(Manager.PaymentTransaction.unidirectional(players[playerIdx_now].icon, -(payment_info.cost.overall / players_count)))
+                                p2d_transactions.push(PaymentTransaction.unidirectional(players[playerIdx_now].icon, -(payment_info.cost.overall / players_count)))
                             }
                         }
                     }
                     
-                    mandatories.push(p2d_transactions.reduce(((acc, curr) => acc.merge(curr)), new Manager.PaymentTransaction({})))
+                    mandatories.push(p2d_transactions.reduce(((acc, curr) => acc.merge(curr)), new PaymentTransaction({})))
                     
                 } else {
                     for(const payment_info of paymentInfos) {
                         if(payment_info.kind === "P2D") {
-                            optionals.push(Manager.PaymentTransaction.unidirectional(players[playerIdx_now].icon, -(payment_info.cost.overall)))
+                            optionals.push(PaymentTransaction.unidirectional(players[playerIdx_now].icon, -(payment_info.cost.overall)))
                         }
                     }
                 }
             }
             break;
         case "infrastructure": {
-                const p2g_transactions: Manager.PaymentTransaction[] = []
+                const p2g_transactions: PaymentTransaction[] = []
                 for(const payment_info of paymentInfos) {
                     if(payment_info.kind === "P2G") {
-                        p2g_transactions.push(Manager.PaymentTransaction.P2G(players[playerIdx_now].icon,payment_info.cost.default))
+                        p2g_transactions.push(PaymentTransaction.P2G(players[playerIdx_now].icon,payment_info.cost.default))
                     }
                 }
             }
             break;
         case "land": {
-                const p2g_transactions: Manager.PaymentTransaction[] = []
-                const p2o_transactions: Manager.PaymentTransaction[] = []
+                const p2g_transactions: PaymentTransaction[] = []
+                const p2o_transactions: PaymentTransaction[] = []
                 if(owned) {
                     const {all_built, minimum_constructed} = (cell.group_id !== undefined) ? ((() => {
                         const others_in_group = PREDEFINED_CELLS.filter(({group_id}) => group_id === cell.group_id)
                         const output: {built: boolean, count: number}[] = others_in_group.map((other) => {
-                            const prop_found: DBManager.PropertyType | null = properties.find((p) => p.cellId === other.cellId) ?? null
+                            const prop_found: PropertyType | null = properties.find((p) => p.cellId === other.cellId) ?? null
                             if(prop_found === null) {
                                 return {
                                     built: false,
@@ -720,7 +728,7 @@ export function transact<T extends ICellData>(playerEmail: string, players: DBMa
 
                     for(const payment_info of paymentInfos) {
                         if(payment_info.kind === "P2G") {
-                            p2g_transactions.push(Manager.PaymentTransaction.P2G(players[playerIdx_now].icon,(payment_info.cost.default * coefficient)))
+                            p2g_transactions.push(PaymentTransaction.P2G(players[playerIdx_now].icon,(payment_info.cost.default * coefficient)))
                         }
                     }
 
@@ -728,40 +736,40 @@ export function transact<T extends ICellData>(playerEmail: string, players: DBMa
                     if(ownerIdx < 0) {
                         break;
                     }
-                    mandatories.push(p2g_transactions.reduce(((acc, curr) => acc.merge(curr)), new Manager.PaymentTransaction({})))
+                    mandatories.push(p2g_transactions.reduce(((acc, curr) => acc.merge(curr)), new PaymentTransaction({})))
                     
                     
                     if(playerIdx_now !== ownerIdx) {
                         for(const payment_info of paymentInfos) {
                             if(payment_info.kind === "P2O") {
-                                p2o_transactions.push(Manager.PaymentTransaction.P2P(players[playerIdx_now].icon,players[ownerIdx].icon,payment_info.cost.additional))
+                                p2o_transactions.push(PaymentTransaction.P2P(players[playerIdx_now].icon,players[ownerIdx].icon,payment_info.cost.additional))
                             }
                         }
-                        mandatories.push(p2o_transactions.reduce(((acc, curr) => acc.merge(curr)), new Manager.PaymentTransaction({})))
+                        mandatories.push(p2o_transactions.reduce(((acc, curr) => acc.merge(curr)), new PaymentTransaction({})))
                     } else if (tmp.count < 3) {
                         for(const payment_info of paymentInfos) {
                             if(payment_info.kind === "P2O") {
-                                p2o_transactions.push(Manager.PaymentTransaction.unidirectional(players[playerIdx_now].icon,-(payment_info.cost.additional)))
+                                p2o_transactions.push(PaymentTransaction.unidirectional(players[playerIdx_now].icon,-(payment_info.cost.additional)))
                             }
                         }
-                        optionals.push(p2o_transactions.reduce(((acc, curr) => acc.merge(curr)), new Manager.PaymentTransaction({})))
+                        optionals.push(p2o_transactions.reduce(((acc, curr) => acc.merge(curr)), new PaymentTransaction({})))
                     }
                     
                     
                 } else {
                     for(const payment_info of paymentInfos) {
                         if(payment_info.kind === "P2G") {
-                            p2g_transactions.push(Manager.PaymentTransaction.P2G(players[playerIdx_now].icon,payment_info.cost.default))
+                            p2g_transactions.push(PaymentTransaction.P2G(players[playerIdx_now].icon,payment_info.cost.default))
                         }
                     }
-                    mandatories.push(p2g_transactions.reduce(((acc, curr) => acc.merge(curr)), new Manager.PaymentTransaction({})))
+                    mandatories.push(p2g_transactions.reduce(((acc, curr) => acc.merge(curr)), new PaymentTransaction({})))
                     
                     for(const payment_info of paymentInfos) {
                         if(payment_info.kind === "P2O") {
-                            p2o_transactions.push(Manager.PaymentTransaction.unidirectional(players[playerIdx_now].icon,-(payment_info.cost.additional)))
+                            p2o_transactions.push(PaymentTransaction.unidirectional(players[playerIdx_now].icon,-(payment_info.cost.additional)))
                         }
                     }
-                    optionals.push(p2o_transactions.reduce(((acc, curr) => acc.merge(curr)), new Manager.PaymentTransaction({})))
+                    optionals.push(p2o_transactions.reduce(((acc, curr) => acc.merge(curr)), new PaymentTransaction({})))
                     
                 }
             }
@@ -769,47 +777,47 @@ export function transact<T extends ICellData>(playerEmail: string, players: DBMa
         case "lotto":
             for(const payment_info of paymentInfos) {
                 if(payment_info.kind === "P2M") {
-                    optionals.push(Manager.PaymentTransaction.unidirectional(players[playerIdx_now].icon,-(payment_info.cost.additional)))
+                    optionals.push(PaymentTransaction.unidirectional(players[playerIdx_now].icon,-(payment_info.cost.additional)))
                 }
             }
             break;
         case "charity":
             for(const payment_info of paymentInfos) {
                 if(payment_info.kind === "P2C") {
-                    mandatories.push(Manager.PaymentTransaction.P2C(players[playerIdx_now].icon,payment_info.cost.default))
+                    mandatories.push(PaymentTransaction.P2C(players[playerIdx_now].icon,payment_info.cost.default))
                 }
             }
             break;
         case "hospital":
             for(const payment_info of paymentInfos) {
                 if(payment_info.kind === "G2M") {
-                    mandatories.push(Manager.PaymentTransaction.G2M(payment_info.cost.fixed))
+                    mandatories.push(PaymentTransaction.G2M(payment_info.cost.fixed))
                 } else if(payment_info.kind === "P2M") {
-                    mandatories.push(Manager.PaymentTransaction.unidirectional(players[playerIdx_now].icon,-(payment_info.cost.default)))
+                    mandatories.push(PaymentTransaction.unidirectional(players[playerIdx_now].icon,-(payment_info.cost.default)))
                 }
             }
             break;
         case "concert":
             for(const payment_info of paymentInfos) {
                 if(payment_info.kind === "P2G") {
-                    mandatories.push(Manager.PaymentTransaction.P2G(players[playerIdx_now].icon,payment_info.cost.default))
+                    mandatories.push(PaymentTransaction.P2G(players[playerIdx_now].icon,payment_info.cost.default))
                 } else if (payment_info.kind == "P2C") {
-                    mandatories.push(Manager.PaymentTransaction.P2C(players[playerIdx_now].icon,payment_info.cost.default))
+                    mandatories.push(PaymentTransaction.P2C(players[playerIdx_now].icon,payment_info.cost.default))
                 } else if(payment_info.kind === "P2M") {
-                    mandatories.push(Manager.PaymentTransaction.unidirectional(players[playerIdx_now].icon,-(payment_info.cost.default)))
+                    mandatories.push(PaymentTransaction.unidirectional(players[playerIdx_now].icon,-(payment_info.cost.default)))
                 }
             }
             break;
         case "jail":
             for(const payment_info of paymentInfos) {
                 if(payment_info.kind === "P2M") {
-                    optionals.push(Manager.PaymentTransaction.unidirectional(players[playerIdx_now].icon,-(payment_info.cost.default)))
+                    optionals.push(PaymentTransaction.unidirectional(players[playerIdx_now].icon,-(payment_info.cost.default)))
                 }
             }
             break;
     }
     return {
-        mandatory: (mandatories.length > 0) ? mandatories.reduce(((acc, curr) => acc.merge(curr)), new Manager.PaymentTransaction({})) : undefined,
-        optional: (optionals.length > 0) ? optionals.reduce(((acc, curr) => acc.merge(curr)), new Manager.PaymentTransaction({})) : undefined
+        mandatory: (mandatories.length > 0) ? mandatories.reduce(((acc, curr) => acc.merge(curr)), new PaymentTransaction({})) : undefined,
+        optional: (optionals.length > 0) ? optionals.reduce(((acc, curr) => acc.merge(curr)), new PaymentTransaction({})) : undefined
     }
 }

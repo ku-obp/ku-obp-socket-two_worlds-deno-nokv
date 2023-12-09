@@ -23,6 +23,10 @@ export function generateNormalPaymentInfo(kind: "P2P" | "P2M" | "P2G" | "G2P" | 
     }
 }
 
+export function sanitizeRoomId(roomId: string): string {
+    return roomId.split("-").join("")
+}
+
 export function generateP2DPaymentInfo(overall: number): PaymentType {
     return {
         kind: "P2D",

@@ -244,6 +244,7 @@ import PREDEFINED_CELLS, {randomChanceId, Transportation, transact, ChanceAction
 
 import { Timeout } from "https://deno.land/x/timeout@2.4/mod.ts"
 
+import { sanitizeRoomId } from "./utils.ts"
   
 
 export type RoomDictionray<T> = {
@@ -294,12 +295,13 @@ export class DBType{
     this._internal = new Map<string, AllDataType>()
   }
   public room(roomId: string) {
-    return this._internal.get(roomId)
+    return this._internal.get(sanitizeRoomId(roomId))
   }
   
   public initializeRoom(roomId: string, host: string, ...guests: string[]) {
+    const _roomId = sanitizeRoomId(roomId)
     const room: AllDataType = {
-      roomId,
+      roomId: _roomId,
       roomData: {
         hostEmail: host,
         maxGuests: guests.length,
@@ -339,15 +341,15 @@ export class DBType{
         }
       }
     }
-    this._internal = this._internal.set(roomId, room)
+    this._internal = this._internal.set(_roomId, room)
   }
 
   public removeRoom(roomId: string) {
-    return this._internal.delete(roomId)
+    return this._internal.delete(sanitizeRoomId(roomId))
   }
 
   public get(roomId: string) {
-    return this._internal.get(roomId)
+    return this._internal.get(sanitizeRoomId(roomId))
   }
 
   private static copyQueue<T>(q: {queue: T[], processed: number}) {
@@ -419,17 +421,19 @@ export class DBType{
   }
 
   public updateRoom(roomId: string, updates: Partial<AllDataType>, callback: (updated: AllDataType) => void) {
-    const got = this.get(roomId)
+    const _roomId = sanitizeRoomId(roomId)
+    const got = this.get(_roomId)
     if(got === undefined) {
       return;
     }
     const updated = DBType.overwrite(got,updates)
-    this._internal = this._internal.set(roomId, updated)
+    this._internal = this._internal.set(_roomId, updated)
     callback(updated)
   }
 
   public updateGameState(roomId: string, updates: Partial<GameStateType>, callback: (updated: GameStateType) => void) {
-    const got = this.get(roomId)
+    const _roomId = sanitizeRoomId(roomId)
+    const got = this.get(_roomId)
     if(got === undefined) {
       return;
     }
@@ -437,30 +441,32 @@ export class DBType{
     const updated = DBType.overwrite(got,{
       gameState: updatedState
     })
-    this._internal = this._internal.set(roomId, updated)
+    this._internal = this._internal.set(_roomId, updated)
     callback(updatedState)
     return updatedState
   }
 
   public commitDoubles(roomId: string) {
-    const got = this._internal.get(roomId)
+    const _roomId = sanitizeRoomId(roomId)
+    const got = this._internal.get(_roomId)
     if(got === undefined) {
       return;
     }
     const doubles_count = got.doublesCount
     const new_doubles_count = (doubles_count < 3) ? Math.min(Math.max(0,doubles_count + 1), 3) : 0
     got.doublesCount = new_doubles_count
-    this._internal = this._internal.set(roomId, got)
+    this._internal = this._internal.set(_roomId, got)
     return new_doubles_count
   }
 
   public flushDoubles(roomId: string) {
-    const got = this._internal.get(roomId)
+    const _roomId = sanitizeRoomId(roomId)
+    const got = this._internal.get(_roomId)
     if(got === undefined) {
       return;
     }
     got.doublesCount = 0
-    this._internal = this._internal.set(roomId, got)
+    this._internal = this._internal.set(_roomId, got)
   }
 
   private static joinFinances(players: PlayerType[], properties: PropertyType[]): {
@@ -487,14 +493,15 @@ export class DBType{
   }
 
   public endGame(roomId: string) {
-    const allState = this.get(roomId)
+    const _roomId = sanitizeRoomId(roomId)
+    const allState = this.get(_roomId)
     if(allState === undefined) {
       return []
     }
     const copied = DBType.copyGameState(allState.gameState)
     const overall_finances = DBType.calculateOverallFinances(copied.players,copied.properties)
     allState.roomData.isEnded = true
-    this._internal = this._internal.set(roomId,allState)
+    this._internal = this._internal.set(_roomId,allState)
     return overall_finances
   }
 }
@@ -659,11 +666,12 @@ const jailAction = (roomId: string, players: PlayerType[], playerIdx_now: number
         }
     })(players[playerIdx_now].remainingJailTurns)
     
+    const _roomId = sanitizeRoomId(roomId)
 
-    const state_after = DB.updateGameState(roomId, {
+    const state_after = DB.updateGameState(_roomId, {
       players: player_updates
     },(updated) => {
-      io.to(roomId).emit("updateGameState", {fresh: false, gameState: updated})
+      io.to(_roomId).emit("updateGameState", {fresh: false, gameState: updated})
     })
     
     return state_after
@@ -671,6 +679,7 @@ const jailAction = (roomId: string, players: PlayerType[], playerIdx_now: number
 
 export const cellAction = (state: GameStateType, playerEmail: string): TaskType | null => {
     const roomId = state.roomId
+    const _roomId = sanitizeRoomId(roomId)
     const playerIdx_now = state.players.findIndex((player) => player.email === playerEmail)
     if(playerIdx_now >= 0) {
       const player_now = state.players[playerIdx_now]
@@ -690,9 +699,9 @@ export const cellAction = (state: GameStateType, playerEmail: string): TaskType 
           // 랜덤 카드 뽑은 후, 그에 따른 액션을 수행하면서 카드 내용 표출
           const chanceId = randomChanceId()
           const chanceActionCallback: ChanceActionCallback = (q,c) => {
-            io.to(roomId).emit("syncQueue",{kind: "notifyChanceCardAcquistion", queues: q,payload: c})
+            io.to(_roomId).emit("syncQueue",{kind: "notifyChanceCardAcquistion", queues: q,payload: c})
           }
-          const state_after = chanceAction(roomId,  state, playerEmail, chanceId, chanceActionCallback)
+          const state_after = chanceAction(_roomId,  state, playerEmail, chanceId, chanceActionCallback)
           if(state_after !== null) {
             return {
               state_after,
@@ -706,12 +715,12 @@ export const cellAction = (state: GameStateType, playerEmail: string): TaskType 
             kind: "warp",
             dest: dest
           },(updated) => {
-            DB.updateGameState(roomId,updated,(_updated) => {
-              io.to(roomId).emit("updateGameState", {fresh: false, gameState: _updated})
+            DB.updateGameState(_roomId,updated,(_updated) => {
+              io.to(_roomId).emit("updateGameState", {fresh: false, gameState: _updated})
             })
           },(updated) => {
-            DB.updateGameState(roomId,updated,(_updated) => {
-              io.to(roomId).emit("updateGameState", {fresh: false, gameState: _updated})
+            DB.updateGameState(_roomId,updated,(_updated) => {
+              io.to(_roomId).emit("updateGameState", {fresh: false, gameState: _updated})
             })
           })
           if(after_move !== null) {
@@ -731,8 +740,8 @@ export const cellAction = (state: GameStateType, playerEmail: string): TaskType 
               players: players_new
             }
           })(state.players)
-          const after = DB.updateGameState(roomId,updates,(updated) => {
-            io.to(roomId).emit("updateGameState", {fresh: false, gameState: updated})
+          const after = DB.updateGameState(_roomId,updates,(updated) => {
+            io.to(_roomId).emit("updateGameState", {fresh: false, gameState: updated})
           })
           if(after !== undefined) {  
             return {
@@ -744,7 +753,7 @@ export const cellAction = (state: GameStateType, playerEmail: string): TaskType 
           else {return null}
         }
       } else if(type === "jail") {
-        const state_after = jailAction(roomId,state.players,playerIdx_now)
+        const state_after = jailAction(_roomId,state.players,playerIdx_now)
         if (state_after !== undefined) {
           return {
             state_after,
@@ -759,11 +768,11 @@ export const cellAction = (state: GameStateType, playerEmail: string): TaskType 
         const [mandatory, optional] = [p.mandatory ?? null, p.optional ?? null]
   
         const paymentsActionCallback: PaymentsActionCallback = (q,p) => {
-          io.to(roomId).emit("syncQueue",{kind: "notifyPayments", queues: q,payload: {
+          io.to(_roomId).emit("syncQueue",{kind: "notifyPayments", queues: q,payload: {
             type, name: cell.name,maxBuildable: cell.maxBuildable, invoices: p
           }})
         }
-        safeEnqueuePayment(roomId,cellId,{mandatory, optional},(q) => paymentsActionCallback(q,{mandatory,optional}))
+        safeEnqueuePayment(_roomId,cellId,{mandatory, optional},(q) => paymentsActionCallback(q,{mandatory,optional}))
         return {
           state_after: state,
           cellType: type,
@@ -792,26 +801,28 @@ export type QueueCallback = ({chances, payments}: {chances: {queue: string[], pr
 }[], processed: number}}) => void
 
 export function safeEnqueueChance(roomId: string, chanceId: string, callback: QueueCallback) {
-    const newRq = (() => {
-      const queues = DB.get(roomId)?.queues
-      if(queues === undefined) {
-        return;
-      }
-      queues.chances = {
-          queue: queues.chances.queue.concat(chanceId),
-          processed: queues.chances.processed
-      }
-      return queues
-    })()
-    if(newRq !== undefined) {
-      DB.updateRoom(roomId,{
-        queues: newRq
-      },(_) => callback(newRq))
+  const _roomId = sanitizeRoomId(roomId)
+  const newRq = (() => {
+    const queues = DB.get(_roomId)?.queues
+    if(queues === undefined) {
+      return;
     }
+    queues.chances = {
+        queue: queues.chances.queue.concat(chanceId),
+        processed: queues.chances.processed
+    }
+    return queues
+  })()
+  if(newRq !== undefined) {
+    DB.updateRoom(_roomId,{
+      queues: newRq
+    },(_) => callback(newRq))
+  }
 }
 
 export function safeDequeueChance(roomId: string, callback: QueueCallback) {
-  const rq = DB.get(roomId)?.queues
+  const _roomId = sanitizeRoomId(roomId)
+  const rq = DB.get(_roomId)?.queues
   try {
     if(rq === undefined) {
       throw {}
@@ -823,7 +834,7 @@ export function safeDequeueChance(roomId: string, callback: QueueCallback) {
       } else {
         const output = rq.chances.queue[idx]
         rq.chances.processed = Math.min(idx + 1,length)
-        DB.updateRoom(roomId,{
+        DB.updateRoom(_roomId,{
           queues: rq
         },(_) => callback(rq))
         return output
@@ -836,21 +847,23 @@ export function safeDequeueChance(roomId: string, callback: QueueCallback) {
 }
 
 export function safeFlushChances(roomId: string, callback: QueueCallback) {
-  const rq = DB.get(roomId)?.queues
+  const _roomId = sanitizeRoomId(roomId)
+  const rq = DB.get(_roomId)?.queues
   if(rq !== undefined) {
     rq.chances = {
       queue: new Array<string>(),
       processed: 0
     }
-    DB.updateRoom(roomId,{
+    DB.updateRoom(_roomId,{
       queues: rq,
     },(_) => callback(rq))
   }
 }
 
 export function safeEnqueuePayment(roomId: string, cellId: number, {mandatory, optional}: {mandatory: PaymentTransaction | null, optional: PaymentTransaction | null}, callback: QueueCallback) {
+  const _roomId = sanitizeRoomId(roomId)
   const newRq = (() => {
-    const queues = DB.get(roomId)?.queues
+    const queues = DB.get(_roomId)?.queues
     if(queues === undefined) {
       return;
     }
@@ -858,14 +871,15 @@ export function safeEnqueuePayment(roomId: string, cellId: number, {mandatory, o
     return queues
   })()
   if(newRq !== undefined) {
-    DB.updateRoom(roomId,{
+    DB.updateRoom(_roomId,{
       queues: newRq
     },(_) => callback(newRq))
   }
 }
 
 export function safeDequeuePayment(roomId: string, callback: QueueCallback) {
-  const rq = DB.get(roomId)?.queues
+  const _roomId = sanitizeRoomId(roomId)
+  const rq = DB.get(_roomId)?.queues
   try {
     if(rq === undefined) {
       throw {}
@@ -877,7 +891,7 @@ export function safeDequeuePayment(roomId: string, callback: QueueCallback) {
       } else {
         const json = rq.payments.queue[idx]
         rq.payments.processed = Math.min(idx + 1,length)
-        DB.updateRoom(roomId,{
+        DB.updateRoom(_roomId,{
           queues: rq
         },(_) => callback(rq))
         const converted = {
@@ -895,13 +909,14 @@ export function safeDequeuePayment(roomId: string, callback: QueueCallback) {
 }
 
 export function safeFlushPayments(roomId: string, callback: QueueCallback) {
-  const rq = DB.get(roomId)?.queues
+  const _roomId = sanitizeRoomId(roomId)
+  const rq = DB.get(_roomId)?.queues
   if(rq !== undefined) {
     rq.payments = {
       queue: [],
       processed: 0
     }
-    DB.updateRoom(roomId,{
+    DB.updateRoom(_roomId,{
       queues: rq,
     },(_) => callback(rq))
   }
@@ -980,7 +995,8 @@ export function tryDeconstruct(players: PlayerType[], properties: PropertyType[]
 }
 
 export function setDices(roomId: string, callback: (dice1: 0 | 1 | 2 | 3 | 4 | 5 | 6, dice2: 0 | 1 | 2 | 3 | 4 | 5 | 6) => void, dices: {dice1: 1 | 2 | 3 | 4 | 5 | 6, dice2: 1 | 2 | 3 | 4 | 5 | 6} | undefined) {
-  const roomDices = DB.get(roomId)?.dices
+  const _roomId = sanitizeRoomId(roomId)
+  const roomDices = DB.get(_roomId)?.dices
   if(roomDices === undefined) {
     return;
   }
@@ -990,7 +1006,7 @@ export function setDices(roomId: string, callback: (dice1: 0 | 1 | 2 | 3 | 4 | 5
     roomDices.dice1 = dices.dice1
     roomDices.dice2 = dices.dice2
   }
-  DB.updateRoom(roomId,{
+  DB.updateRoom(_roomId,{
     dices: roomDices
   },(_) => callback(roomDices.dice1, roomDices.dice2))
 }
