@@ -4,7 +4,7 @@ import { Router } from "oak"
 
 const io: Server = new Server({
     cors: {
-      origin: ["https://ku-obp.vercel.app", "http://localhost:3000"],
+      origin: ["https://ku-obp.vercel.app", "http://localhost:3000", "https://ku-*-lake041.vercel.app"],
       methods: ["GET", "POST"],
       allowedHeaders: ["Content-Type", "Authorization", "Access-Control-Allow-Origin"],
       credentials: true
