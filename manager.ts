@@ -1,3 +1,251 @@
+
+
+export type UniversityStateType = "notYet" | "undergraduate" | "graduated"
+
+export type PlayerType = {
+    email: string,
+    icon: PlayerIconType,
+    location: number,
+    displayLocation: number,
+    cash: number,
+    cycles: number,
+    university: UniversityStateType,
+    tickets: {
+        discountRent: number,
+        bonus: boolean,
+        doubleLotto: number,
+    },
+    remainingJailTurns: number,
+}
+
+export type PropertyType = {
+    ownerEmail: string,
+    count: number,
+    cellId: number
+}
+
+export type GameStateType = {
+    roomId: string,
+    players: PlayerType[],
+    properties: PropertyType[],
+    nowInTurn: number,
+    govIncome: number,
+    charityIncome: number,
+    sidecars: {
+        limitRents: number
+    }
+}
+
+import { CellType } from "./cells.ts";
+
+export type TaskType = {
+    state_after: GameStateType,
+    cellType: CellType,
+    turn_finished: boolean
+}
+
+export type DiceType = 0 | 1 | 2 | 3 | 4 | 5 | 6
+
+
+
+
+const INITIAL_CASH = 6000000;
+
+import io from "./server.ts"
+
+import * as Utils from "./utils.ts"
+
+
+export class PaymentTransaction {
+    private _player0: number
+    public get player0(): number {
+        return this._player0
+    }
+    private _player1: number
+    public get player1(): number {
+        return this._player1
+    }
+    private _player2: number
+    public get player2(): number {
+        return this._player2
+    }
+    private _player3: number
+    public get player3(): number  {
+        return this._player3
+    }
+    private _government: number
+    public get government(): number {
+        return this._government
+    }
+    private _charity: number
+    public get charity(): number {
+        return this._charity
+    }
+    public constructor({player0, player1, player2, player3, government, charity}: {
+      player0?: number, player1?: number, player2?: number, player3?: number, government?: number, charity?: number
+    }) {
+        this._player0 = player0 ?? 0;
+        this._player1 = player1 ?? 0;
+        this._player2 = player2 ?? 0;
+        this._player3 = player3 ?? 0;
+        this._government = government ?? 0;
+        this._charity = charity ?? 0;
+    }
+    public static toJSON(transaction: PaymentTransaction): PaymentTransactionJSON {
+        const {
+            player0, player1, player2, player3, government, charity
+        }: {player0: number, player1: number, player2: number, player3: number, government: number, charity: number} = transaction
+        return {
+            player0,
+            player1,
+            player2,
+            player3,
+            government,
+            charity
+        }
+    }
+  
+    public static fromJSON(transactionJSON: PaymentTransactionJSON): PaymentTransaction {
+        return new PaymentTransaction(transactionJSON)
+    }
+    public merge(other: PaymentTransaction): PaymentTransaction {
+        return new PaymentTransaction({
+            player0: this.player0 + other.player0,
+            player1: this.player1 + other.player1,
+            player2: this.player2 + other.player2,
+            player3: this.player3 + other.player3,
+            government: this.government + other.government,
+            charity: this.charity + other.charity
+        })
+    }
+  
+    public get revert() {
+        return new PaymentTransaction({
+            player0: -this.player0,
+            player1: -this.player1,
+            player2: -this.player2,
+            player3: -this.player3,
+            government: -this.government,
+            charity: -this.charity
+        })
+    }
+  
+    public get flat() {
+        return {
+            playerTransactions: [
+            this.player0,
+            this.player1,
+            this.player2,
+            this.player3
+            ],
+            government: this.government,
+            charity: this.charity,
+        }
+    }
+  
+    public static P2G(playerIcon: PlayerIconType, amount: number) {
+        switch(playerIcon) {
+            case 0:
+            return new PaymentTransaction({
+                player0: -amount,
+                government: amount
+            })
+            case 1:
+            return new PaymentTransaction({
+                player1: -amount,
+                government: amount
+            })
+            case 2:
+            return new PaymentTransaction({
+                player2: -amount,
+                government: amount
+            })
+            case 3:
+            return new PaymentTransaction({
+                player3: -amount,
+                government: amount
+            })
+        }
+    }
+  
+    public static G2M(amount: number) {
+        return new PaymentTransaction({
+            government: -amount,
+        })
+    }
+  
+    public static P2C(playerIcon: PlayerIconType, amount: number) {
+        switch(playerIcon) {
+            case 0:
+            return new PaymentTransaction({
+                player0: -amount,
+                charity: amount
+            })
+            case 1:
+            return new PaymentTransaction({
+                player1: -amount,
+                charity: amount
+            })
+            case 2:
+            return new PaymentTransaction({
+                player2: -amount,
+                charity: amount
+            })
+            case 3:
+            return new PaymentTransaction({
+                player3: -amount,
+                charity: amount
+            })
+        }
+    }
+  
+    public static unidirectional(playerIcon: PlayerIconType, amount: number) {
+        switch(playerIcon) {
+            case 0:
+            return new PaymentTransaction({
+                player0: amount
+            })
+            case 1:
+            return new PaymentTransaction({
+                player1: amount
+            })
+            case 2:
+            return new PaymentTransaction({
+                player2: amount
+            })
+            case 3:
+            return new PaymentTransaction({
+                player3: amount
+            })
+        }
+    }
+  
+    public static P2P(from: PlayerIconType, to: PlayerIconType, amount: number): PaymentTransaction {
+        const different_pair = Utils.DifferentNumberPair.checkDifferent<PlayerIconType>(from, to)
+        return Utils.nullableMapper(different_pair,({a,b}) => {
+            return PaymentTransaction.unidirectional(a, -amount).merge(PaymentTransaction.unidirectional(b, amount))
+        },{
+            mapNullIsGenerator: false, constant: new PaymentTransaction({})
+        })
+    }
+}
+
+export type PaymentTransactionJSON = {
+    player0: number;
+    player1: number;
+    player2: number;
+    player3: number;
+    government: number;
+    charity: number;
+}
+
+
+import PREDEFINED_CELLS, {randomChanceId, Transportation, transact, ChanceActionCallback, chanceAction, PaymentsActionCallback} from "./cells.ts";
+
+import { Timeout } from "https://deno.land/x/timeout@2.4/mod.ts"
+
+  
+
 export type RoomDictionray<T> = {
     [roomId: string]: T
 }
@@ -254,252 +502,6 @@ export class DBType{
 }
 
 
-
-export type UniversityStateType = "notYet" | "undergraduate" | "graduated"
-
-export type PlayerType = {
-    email: string,
-    icon: PlayerIconType,
-    location: number,
-    displayLocation: number,
-    cash: number,
-    cycles: number,
-    university: UniversityStateType,
-    tickets: {
-        discountRent: number,
-        bonus: boolean,
-        doubleLotto: number,
-    },
-    remainingJailTurns: number,
-}
-
-export type PropertyType = {
-    ownerEmail: string,
-    count: number,
-    cellId: number
-}
-
-export type GameStateType = {
-    roomId: string,
-    players: PlayerType[],
-    properties: PropertyType[],
-    nowInTurn: number,
-    govIncome: number,
-    charityIncome: number,
-    sidecars: {
-        limitRents: number
-    }
-}
-
-import { CellType } from "./cells.ts";
-
-export type TaskType = {
-    state_after: GameStateType,
-    cellType: CellType,
-    turn_finished: boolean
-}
-
-export type DiceType = 0 | 1 | 2 | 3 | 4 | 5 | 6
-
-
-
-
-const INITIAL_CASH = 6000000;
-
-import io from "./server.ts"
-
-import * as Utils from "./utils.ts"
-
-
-export class PaymentTransaction {
-    private _player0: number
-    public get player0(): number {
-        return this._player0
-    }
-    private _player1: number
-    public get player1(): number {
-        return this._player1
-    }
-    private _player2: number
-    public get player2(): number {
-        return this._player2
-    }
-    private _player3: number
-    public get player3(): number  {
-        return this._player3
-    }
-    private _government: number
-    public get government(): number {
-        return this._government
-    }
-    private _charity: number
-    public get charity(): number {
-        return this._charity
-    }
-    public constructor({player0, player1, player2, player3, government, charity}: {
-      player0?: number, player1?: number, player2?: number, player3?: number, government?: number, charity?: number
-    }) {
-        this._player0 = player0 ?? 0;
-        this._player1 = player1 ?? 0;
-        this._player2 = player2 ?? 0;
-        this._player3 = player3 ?? 0;
-        this._government = government ?? 0;
-        this._charity = charity ?? 0;
-    }
-    public static toJSON(transaction: PaymentTransaction): PaymentTransactionJSON {
-        const {
-            player0, player1, player2, player3, government, charity
-        }: {player0: number, player1: number, player2: number, player3: number, government: number, charity: number} = transaction
-        return {
-            player0,
-            player1,
-            player2,
-            player3,
-            government,
-            charity
-        }
-    }
-  
-    public static fromJSON(transactionJSON: PaymentTransactionJSON): PaymentTransaction {
-        return new PaymentTransaction(transactionJSON)
-    }
-    public merge(other: PaymentTransaction): PaymentTransaction {
-        return new PaymentTransaction({
-            player0: this.player0 + other.player0,
-            player1: this.player1 + other.player1,
-            player2: this.player2 + other.player2,
-            player3: this.player3 + other.player3,
-            government: this.government + other.government,
-            charity: this.charity + other.charity
-        })
-    }
-  
-    public get revert() {
-        return new PaymentTransaction({
-            player0: -this.player0,
-            player1: -this.player1,
-            player2: -this.player2,
-            player3: -this.player3,
-            government: -this.government,
-            charity: -this.charity
-        })
-    }
-  
-    public get flat() {
-        return {
-            playerTransactions: [
-            this.player0,
-            this.player1,
-            this.player2,
-            this.player3
-            ],
-            government: this.government,
-            charity: this.charity,
-        }
-    }
-  
-    public static P2G(playerIcon: PlayerIconType, amount: number) {
-        switch(playerIcon) {
-            case 0:
-            return new PaymentTransaction({
-                player0: -amount,
-                government: amount
-            })
-            case 1:
-            return new PaymentTransaction({
-                player1: -amount,
-                government: amount
-            })
-            case 2:
-            return new PaymentTransaction({
-                player2: -amount,
-                government: amount
-            })
-            case 3:
-            return new PaymentTransaction({
-                player3: -amount,
-                government: amount
-            })
-        }
-    }
-  
-    public static G2M(amount: number) {
-        return new PaymentTransaction({
-            government: -amount,
-        })
-    }
-  
-    public static P2C(playerIcon: PlayerIconType, amount: number) {
-        switch(playerIcon) {
-            case 0:
-            return new PaymentTransaction({
-                player0: -amount,
-                charity: amount
-            })
-            case 1:
-            return new PaymentTransaction({
-                player1: -amount,
-                charity: amount
-            })
-            case 2:
-            return new PaymentTransaction({
-                player2: -amount,
-                charity: amount
-            })
-            case 3:
-            return new PaymentTransaction({
-                player3: -amount,
-                charity: amount
-            })
-        }
-    }
-  
-    public static unidirectional(playerIcon: PlayerIconType, amount: number) {
-        switch(playerIcon) {
-            case 0:
-            return new PaymentTransaction({
-                player0: amount
-            })
-            case 1:
-            return new PaymentTransaction({
-                player1: amount
-            })
-            case 2:
-            return new PaymentTransaction({
-                player2: amount
-            })
-            case 3:
-            return new PaymentTransaction({
-                player3: amount
-            })
-        }
-    }
-  
-    public static P2P(from: PlayerIconType, to: PlayerIconType, amount: number): PaymentTransaction {
-        const different_pair = Utils.DifferentNumberPair.checkDifferent<PlayerIconType>(from, to)
-        return Utils.nullableMapper(different_pair,({a,b}) => {
-            return PaymentTransaction.unidirectional(a, -amount).merge(PaymentTransaction.unidirectional(b, amount))
-        },{
-            mapNullIsGenerator: false, constant: new PaymentTransaction({})
-        })
-    }
-}
-
-export type PaymentTransactionJSON = {
-    player0: number;
-    player1: number;
-    player2: number;
-    player3: number;
-    government: number;
-    charity: number;
-}
-
-
-import PREDEFINED_CELLS, {randomChanceId, Transportation, transact, ChanceActionCallback, chanceAction, PaymentsActionCallback} from "./cells.ts";
-
-import { Timeout } from "https://deno.land/x/timeout@2.4/mod.ts"
-
-  
   // @deno-types="npm:xrange@2.2.1"
 import xrange from "npm:xrange@2.2.1"
 
