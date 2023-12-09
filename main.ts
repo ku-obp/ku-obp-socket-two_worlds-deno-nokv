@@ -48,7 +48,7 @@ router.post("/create", async (context) => {
 })
 
 app.use(oakCors({
-  origin: ["https://ku-obp.vercel.app", "http://localhost:3000", "https://ku-*-lake041.vercel.app"],
+  origin: ["https://ku-obp.vercel.app", "http://localhost:3000", "https://ku-*-lake041.vercel.app", "https://ku-obp-gamma.vercel.app/"],
   methods: ["GET", "POST", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization", "Access-Control-Allow-Origin"],
   credentials: true
@@ -138,23 +138,21 @@ function onConnected(socket: Socket) {
 
   socket.on("joinRoom", ({playerEmail, roomId}: {playerEmail: string, roomId: string}) => {
     const _roomId = sanitizeRoomId(roomId)
-    const _state = DB.get(_roomId)
-    try {
-      if(_state === undefined) {
-        throw "invalid room"
-      }
-      const gameState: DBManager.GameStateType = DBType.copyGameState(_state.gameState)
+    const state = DB.get(_roomId)
+    if(state === undefined) {
+      socket.emit("joinFailed", {msg: "invalid room"})
+    } else {
+      const gameState: DBManager.GameStateType = DBType.copyGameState(state.gameState)
       socket.join(_roomId)
       socket.emit("joinSucceed")
       const isPlayable = gameState.players.map(({email}) => email).includes(playerEmail)
       socket.emit("updateGameState", { fresh: true, gameState, isPlayable })
-      const doubles_count = _state.doublesCount
+      const doubles_count = state.doublesCount
       socket.emit("refreshDoubles", doubles_count)
-      const dices = _state.dices
+      const dices = state.dices
       socket.emit("showDices", dices)
-    } catch(msg) {
-      socket.emit("joinFailed", {msg: String(msg)})
     }
+    
   })
 
   socket.on("skip", ({roomId, playerEmail}: {roomId: string, playerEmail: string}) => {
