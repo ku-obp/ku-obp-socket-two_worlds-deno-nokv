@@ -137,13 +137,10 @@ function onConnected(socket: Socket) {
   console.log(socket.id + " is connected.");
 
   socket.on("joinRoom", ({playerEmail, roomId}: {playerEmail: string, roomId: string}) => {
-    const _roomId = sanitizeRoomId(roomId)
-    const state = DB.get(_roomId)
-    if(state === undefined) {
-      socket.emit("joinFailed", {msg: "invalid room"})
-    } else {
-      const gameState: DBManager.GameStateType = DBType.copyGameState(state.gameState)
-      socket.join(_roomId)
+    if(roomId === "testing") {
+      const state = DBType.forTesting
+      const gameState = DBType.copyGameState(state.gameState)
+      socket.join("testing")
       socket.emit("joinSucceed")
       const isPlayable = gameState.players.map(({email}) => email).includes(playerEmail)
       socket.emit("updateGameState", { fresh: true, gameState, isPlayable })
@@ -151,6 +148,22 @@ function onConnected(socket: Socket) {
       socket.emit("refreshDoubles", doubles_count)
       const dices = state.dices
       socket.emit("showDices", dices)
+    } else {
+      const _roomId = sanitizeRoomId(roomId)
+      const state = DB.get(_roomId)
+      if(state === undefined) {
+        socket.emit("joinFailed", {msg: "invalid room"})
+      } else {
+        const gameState: DBManager.GameStateType = DBType.copyGameState(state.gameState)
+        socket.join(_roomId)
+        socket.emit("joinSucceed")
+        const isPlayable = gameState.players.map(({email}) => email).includes(playerEmail)
+        socket.emit("updateGameState", { fresh: true, gameState, isPlayable })
+        const doubles_count = state.doublesCount
+        socket.emit("refreshDoubles", doubles_count)
+        const dices = state.dices
+        socket.emit("showDices", dices)
+      }
     }
     
   })
