@@ -290,15 +290,115 @@ export type AllDataType = {
 }
 
 export class DBType{
+  public static forTesting: AllDataType = {
+    roomId: "testing",
+    roomData: {
+      hostEmail: "newsniper@protonmail.com",
+      maxGuests: 3,
+      guests: [
+        "test3@ku-obp.com",
+        "y.bi.mk2@gmail.com",
+        "by_yeun@daum.net"
+      ],
+      isStarted: true,
+      isEnded: false
+    },
+    gameState: {
+      roomId: "testing",
+      players: ((arr: string[]): PlayerType[] => [
+          {email: arr[0], icon: 0,location: 0, displayLocation: 0, cash: INITIAL_CASH, cycles: 0, university: "notYet", tickets: {discountRent: 0, bonus: false, doubleLotto: 0}, remainingJailTurns: 0},
+          {email: arr[1], icon: 1,location: 0, displayLocation: 0, cash: INITIAL_CASH, cycles: 0, university: "notYet", tickets: {discountRent: 0, bonus: false, doubleLotto: 0}, remainingJailTurns: 0},
+          {email: arr[2], icon: 2,location: 0, displayLocation: 0, cash: INITIAL_CASH, cycles: 0, university: "notYet", tickets: {discountRent: 0, bonus: false, doubleLotto: 0}, remainingJailTurns: 0},
+          {email: arr[3], icon: 3,location: 0, displayLocation: 0, cash: INITIAL_CASH, cycles: 0, university: "notYet", tickets: {discountRent: 0, bonus: false, doubleLotto: 0}, remainingJailTurns: 0},
+      ])(Array.from([
+        "newsniper@protonmail.com",
+        "test3@ku-obp.com",
+        "y.bi.mk2@gmail.com",
+        "by_yeun@daum.net"
+      ])),
+      properties: [],
+      nowInTurn: 0,
+      govIncome: 0,
+      charityIncome: 0,
+      sidecars: {
+          limitRents: 0
+      }
+    },
+    doublesCount: 0,
+    dices: {
+      dice1: 0,
+      dice2: 0
+    },
+    queues: {
+      chances: {
+        queue: [],
+        processed: 0
+      },
+      payments: {
+        queue: [],
+        processed: 0
+      }
+    }
+  }
   private _internal: Map<string, AllDataType>
   public constructor() {
     this._internal = new Map<string, AllDataType>()
   }
-  public room(roomId: string) {
-    return this._internal.get(sanitizeRoomId(roomId))
-  }
   
   public initializeRoom(roomId: string, host: string, ...guests: string[]) {
+    if(roomId === "testing") {
+      DBType.forTesting = {
+        roomId: "testing",
+        roomData: {
+          hostEmail: "newsniper@protonmail.com",
+          maxGuests: 3,
+          guests: [
+            "test3@ku-obp.com",
+            "y.bi.mk2@gmail.com",
+            "by_yeun@daum.net"
+          ],
+          isStarted: true,
+          isEnded: false
+        },
+        gameState: {
+          roomId: "testing",
+          players: ((arr: string[]): PlayerType[] => [
+              {email: arr[0], icon: 0,location: 0, displayLocation: 0, cash: INITIAL_CASH, cycles: 0, university: "notYet", tickets: {discountRent: 0, bonus: false, doubleLotto: 0}, remainingJailTurns: 0},
+              {email: arr[1], icon: 1,location: 0, displayLocation: 0, cash: INITIAL_CASH, cycles: 0, university: "notYet", tickets: {discountRent: 0, bonus: false, doubleLotto: 0}, remainingJailTurns: 0},
+              {email: arr[2], icon: 2,location: 0, displayLocation: 0, cash: INITIAL_CASH, cycles: 0, university: "notYet", tickets: {discountRent: 0, bonus: false, doubleLotto: 0}, remainingJailTurns: 0},
+              {email: arr[3], icon: 3,location: 0, displayLocation: 0, cash: INITIAL_CASH, cycles: 0, university: "notYet", tickets: {discountRent: 0, bonus: false, doubleLotto: 0}, remainingJailTurns: 0},
+          ])(Array.from([
+            "newsniper@protonmail.com",
+            "test3@ku-obp.com",
+            "y.bi.mk2@gmail.com",
+            "by_yeun@daum.net"
+          ])),
+          properties: [],
+          nowInTurn: 0,
+          govIncome: 0,
+          charityIncome: 0,
+          sidecars: {
+              limitRents: 0
+          }
+        },
+        doublesCount: 0,
+        dices: {
+          dice1: 0,
+          dice2: 0
+        },
+        queues: {
+          chances: {
+            queue: [],
+            processed: 0
+          },
+          payments: {
+            queue: [],
+            processed: 0
+          }
+        }
+      }
+      return
+    }
     const _roomId = sanitizeRoomId(roomId)
     const room: AllDataType = {
       roomId: _roomId,
@@ -344,11 +444,10 @@ export class DBType{
     this._internal = this._internal.set(_roomId, room)
   }
 
-  public removeRoom(roomId: string) {
-    return this._internal.delete(sanitizeRoomId(roomId))
-  }
-
   public get(roomId: string) {
+    if(roomId === "testing") {
+      return DBType.forTesting
+    }
     return this._internal.get(sanitizeRoomId(roomId))
   }
 
@@ -421,52 +520,76 @@ export class DBType{
   }
 
   public updateRoom(roomId: string, updates: Partial<AllDataType>, callback: (updated: AllDataType) => void) {
-    const _roomId = sanitizeRoomId(roomId)
-    const got = this.get(_roomId)
-    if(got === undefined) {
+    if(roomId === "testing") {
+      const updated_testing = DBType.overwrite(DBType.forTesting,updates)
+      DBType.forTesting = updated_testing
+      callback(DBType.forTesting)
       return;
+    } else {
+      const _roomId = sanitizeRoomId(roomId)
+      const got = this.get(_roomId)
+      if(got === undefined) {
+        return;
+      }
+      const updated = DBType.overwrite(got,updates)
+      this._internal = this._internal.set(_roomId, updated)
+      callback(updated)
     }
-    const updated = DBType.overwrite(got,updates)
-    this._internal = this._internal.set(_roomId, updated)
-    callback(updated)
   }
 
   public updateGameState(roomId: string, updates: Partial<GameStateType>, callback: (updated: GameStateType) => void) {
     const _roomId = sanitizeRoomId(roomId)
-    const got = this.get(_roomId)
-    if(got === undefined) {
-      return;
+    if(roomId === "testing") {
+      const updatedState_testing = DBType.overwriteState(DBType.forTesting.gameState,updates)
+      DBType.forTesting.gameState = updatedState_testing
+      callback(updatedState_testing)
+      return updatedState_testing
+    } else {
+      const got = this.get(_roomId)
+      if(got === undefined) {
+        return;
+      }
+      const updatedState = DBType.overwriteState(got.gameState,updates)
+      const updated = DBType.overwrite(got,{
+        gameState: updatedState
+      })
+      this._internal = this._internal.set(_roomId, updated)
+      callback(updatedState)
+      return updatedState
     }
-    const updatedState = DBType.overwriteState(got.gameState,updates)
-    const updated = DBType.overwrite(got,{
-      gameState: updatedState
-    })
-    this._internal = this._internal.set(_roomId, updated)
-    callback(updatedState)
-    return updatedState
   }
 
   public commitDoubles(roomId: string) {
-    const _roomId = sanitizeRoomId(roomId)
-    const got = this._internal.get(_roomId)
-    if(got === undefined) {
-      return;
+    if(roomId === "testing") {
+      const _dc = DBType.forTesting.doublesCount
+      DBType.forTesting.doublesCount = (_dc < 3) ? Math.min(Math.max(0,_dc + 1),3) : 0
+      return DBType.forTesting.doublesCount
+    } else {
+      const _roomId = sanitizeRoomId(roomId)
+      const got = this._internal.get(_roomId)
+      if(got === undefined) {
+        return;
+      }
+      const doubles_count = got.doublesCount
+      const new_doubles_count = (doubles_count < 3) ? Math.min(Math.max(0,doubles_count + 1), 3) : 0
+      got.doublesCount = new_doubles_count
+      this._internal = this._internal.set(_roomId, got)
+      return new_doubles_count
     }
-    const doubles_count = got.doublesCount
-    const new_doubles_count = (doubles_count < 3) ? Math.min(Math.max(0,doubles_count + 1), 3) : 0
-    got.doublesCount = new_doubles_count
-    this._internal = this._internal.set(_roomId, got)
-    return new_doubles_count
   }
 
   public flushDoubles(roomId: string) {
-    const _roomId = sanitizeRoomId(roomId)
-    const got = this._internal.get(_roomId)
-    if(got === undefined) {
-      return;
+    if(roomId === "testing") {
+      DBType.forTesting.doublesCount = 0
+    } else {
+      const _roomId = sanitizeRoomId(roomId)
+      const got = this._internal.get(_roomId)
+      if(got === undefined) {
+        return;
+      }
+      got.doublesCount = 0
+      this._internal = this._internal.set(_roomId, got)
     }
-    got.doublesCount = 0
-    this._internal = this._internal.set(_roomId, got)
   }
 
   private static joinFinances(players: PlayerType[], properties: PropertyType[]): {
@@ -493,16 +616,23 @@ export class DBType{
   }
 
   public endGame(roomId: string) {
-    const _roomId = sanitizeRoomId(roomId)
-    const allState = this.get(_roomId)
-    if(allState === undefined) {
-      return []
+    if(roomId==="testing") {
+      DBType.forTesting.roomData.isEnded = true
+      const copied_testing = DBType.copyGameState(DBType.forTesting.gameState)
+      const overall_finances_testing = DBType.calculateOverallFinances(copied_testing.players,copied_testing.properties)
+      return overall_finances_testing
+    } else {
+      const _roomId = sanitizeRoomId(roomId)
+      const allState = this.get(_roomId)
+      if(allState === undefined) {
+        return []
+      }
+      const copied = DBType.copyGameState(allState.gameState)
+      const overall_finances = DBType.calculateOverallFinances(copied.players,copied.properties)
+      allState.roomData.isEnded = true
+      this._internal = this._internal.set(_roomId,allState)
+      return overall_finances
     }
-    const copied = DBType.copyGameState(allState.gameState)
-    const overall_finances = DBType.calculateOverallFinances(copied.players,copied.properties)
-    allState.roomData.isEnded = true
-    this._internal = this._internal.set(_roomId,allState)
-    return overall_finances
   }
 }
 
