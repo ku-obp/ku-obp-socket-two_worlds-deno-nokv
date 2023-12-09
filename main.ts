@@ -1,4 +1,4 @@
-import { Application } from "oak"
+import { Application, BodyJson } from "oak"
 import { Socket } from "socket-io"
 
 import * as DBManager from "./dbManager.ts"
@@ -26,16 +26,17 @@ type CreateRoomRequestPayloadType = {
 
 
 
-router.post("/create", async(context) => {
-  const bodyText = (await context.request.body({type: "text"}).value)
-  const {
-    roomId,
-    player1,
-    player2,
-    player3,
-    player4
-  } = JSON.parse(bodyText)
-  GameManager.createRoom(roomId as string, player1 as string, player2 as string, player3 as string, player4 as string)
+router.post("/create", (context) => {
+  const bodyJSON = context.request.body({type: "json"})
+  bodyJSON.value.then((payload: CreateRoomRequestPayloadType) => {
+    GameManager.createRoom(payload.roomId, payload.player1, payload.player2, payload.player3, payload.player4)
+    context.response.body = {status: "succeeded"}
+  }).catch(() => {
+    context.response.body = {status: "failed"}
+  }).finally(() => {
+    context.response.type = "application/json"
+    context.response.status = 200
+  })
 })
 
 
@@ -206,9 +207,6 @@ function onConnected(socket: Socket) {
     io.to(roomId).emit("showDices", {dice1, dice2})
     
     const state = GameManager.getGameState(roomId);
-    if(state === null) {
-      return;
-    }
     const copied = GameManager.deepcopyGameState(state)
     const players = Array.from(copied.players);
     const idx = players.findIndex((player) => (player.email === playerEmail));
