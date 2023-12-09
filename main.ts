@@ -26,10 +26,6 @@ type CreateRoomRequestPayloadType = {
 }
 
 
-
-router.get("/",(ctx) => {
-  ctx.response.body = "Hello World!";
-})
 router.post("/create", (context) => {
   const bodyJSON = context.request.body({type: "json"})
   bodyJSON.value.then((payload: CreateRoomRequestPayloadType) => {
@@ -41,6 +37,8 @@ router.post("/create", (context) => {
     context.response.type = "application/json"
     context.response.status = 200
   })
+}).get("/",(ctx) => {
+  ctx.response.body = "Hello World!";
 })
 
 app.use(oakCors({
