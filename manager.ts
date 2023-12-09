@@ -290,7 +290,7 @@ export type AllDataType = {
 
 export class DBType{
   private _internal: Map<string, AllDataType>
-  private constructor() {
+  public constructor() {
     this._internal = new Map<string, AllDataType>()
   }
   public room(roomId: string) {
@@ -497,9 +497,11 @@ export class DBType{
     this._internal = this._internal.set(roomId,allState)
     return overall_finances
   }
-
-  public static DB: DBType = new DBType()
 }
+
+const DB: DBType = new DBType()
+export default DB
+
 
 
   // @deno-types="npm:xrange@2.2.1"
@@ -554,7 +556,7 @@ export const movePlayer = (game_state: GameStateType, playerIdx: number, args: {
     finalCallback({
       players: tmp_players
     })
-    const state_after_move = DBType.DB.get(game_state.roomId)?.gameState
+    const state_after_move = DB.get(game_state.roomId)?.gameState
     return (state_after_move !== undefined) ? {can_get_salery, dest, state_after_move } : null
 }
 
@@ -635,7 +637,7 @@ export function giveSalery(state: GameStateType, playerEmail: string, government
       };
     })
     
-    return DBType.DB.updateGameState(state.roomId,{
+    return DB.updateGameState(state.roomId,{
       players: players_after,
       govIncome: 0
     },callback)
@@ -658,7 +660,7 @@ const jailAction = (roomId: string, players: PlayerType[], playerIdx_now: number
     })(players[playerIdx_now].remainingJailTurns)
     
 
-    const state_after = DBType.DB.updateGameState(roomId, {
+    const state_after = DB.updateGameState(roomId, {
       players: player_updates
     },(updated) => {
       io.to(roomId).emit("updateGameState", {fresh: false, gameState: updated})
@@ -704,11 +706,11 @@ export const cellAction = (state: GameStateType, playerEmail: string): TaskType 
             kind: "warp",
             dest: dest
           },(updated) => {
-            DBType.DB.updateGameState(roomId,updated,(_updated) => {
+            DB.updateGameState(roomId,updated,(_updated) => {
               io.to(roomId).emit("updateGameState", {fresh: false, gameState: _updated})
             })
           },(updated) => {
-            DBType.DB.updateGameState(roomId,updated,(_updated) => {
+            DB.updateGameState(roomId,updated,(_updated) => {
               io.to(roomId).emit("updateGameState", {fresh: false, gameState: _updated})
             })
           })
@@ -729,7 +731,7 @@ export const cellAction = (state: GameStateType, playerEmail: string): TaskType 
               players: players_new
             }
           })(state.players)
-          const after = DBType.DB.updateGameState(roomId,updates,(updated) => {
+          const after = DB.updateGameState(roomId,updates,(updated) => {
             io.to(roomId).emit("updateGameState", {fresh: false, gameState: updated})
           })
           if(after !== undefined) {  
@@ -791,7 +793,7 @@ export type QueueCallback = ({chances, payments}: {chances: {queue: string[], pr
 
 export function safeEnqueueChance(roomId: string, chanceId: string, callback: QueueCallback) {
     const newRq = (() => {
-      const queues = DBType.DB.get(roomId)?.queues
+      const queues = DB.get(roomId)?.queues
       if(queues === undefined) {
         return;
       }
@@ -802,14 +804,14 @@ export function safeEnqueueChance(roomId: string, chanceId: string, callback: Qu
       return queues
     })()
     if(newRq !== undefined) {
-      DBType.DB.updateRoom(roomId,{
+      DB.updateRoom(roomId,{
         queues: newRq
       },(_) => callback(newRq))
     }
 }
 
 export function safeDequeueChance(roomId: string, callback: QueueCallback) {
-  const rq = DBType.DB.get(roomId)?.queues
+  const rq = DB.get(roomId)?.queues
   try {
     if(rq === undefined) {
       throw {}
@@ -821,7 +823,7 @@ export function safeDequeueChance(roomId: string, callback: QueueCallback) {
       } else {
         const output = rq.chances.queue[idx]
         rq.chances.processed = Math.min(idx + 1,length)
-        DBType.DB.updateRoom(roomId,{
+        DB.updateRoom(roomId,{
           queues: rq
         },(_) => callback(rq))
         return output
@@ -834,13 +836,13 @@ export function safeDequeueChance(roomId: string, callback: QueueCallback) {
 }
 
 export function safeFlushChances(roomId: string, callback: QueueCallback) {
-  const rq = DBType.DB.get(roomId)?.queues
+  const rq = DB.get(roomId)?.queues
   if(rq !== undefined) {
     rq.chances = {
       queue: new Array<string>(),
       processed: 0
     }
-    DBType.DB.updateRoom(roomId,{
+    DB.updateRoom(roomId,{
       queues: rq,
     },(_) => callback(rq))
   }
@@ -848,7 +850,7 @@ export function safeFlushChances(roomId: string, callback: QueueCallback) {
 
 export function safeEnqueuePayment(roomId: string, cellId: number, {mandatory, optional}: {mandatory: PaymentTransaction | null, optional: PaymentTransaction | null}, callback: QueueCallback) {
   const newRq = (() => {
-    const queues = DBType.DB.get(roomId)?.queues
+    const queues = DB.get(roomId)?.queues
     if(queues === undefined) {
       return;
     }
@@ -856,14 +858,14 @@ export function safeEnqueuePayment(roomId: string, cellId: number, {mandatory, o
     return queues
   })()
   if(newRq !== undefined) {
-    DBType.DB.updateRoom(roomId,{
+    DB.updateRoom(roomId,{
       queues: newRq
     },(_) => callback(newRq))
   }
 }
 
 export function safeDequeuePayment(roomId: string, callback: QueueCallback) {
-  const rq = DBType.DB.get(roomId)?.queues
+  const rq = DB.get(roomId)?.queues
   try {
     if(rq === undefined) {
       throw {}
@@ -875,7 +877,7 @@ export function safeDequeuePayment(roomId: string, callback: QueueCallback) {
       } else {
         const json = rq.payments.queue[idx]
         rq.payments.processed = Math.min(idx + 1,length)
-        DBType.DB.updateRoom(roomId,{
+        DB.updateRoom(roomId,{
           queues: rq
         },(_) => callback(rq))
         const converted = {
@@ -893,13 +895,13 @@ export function safeDequeuePayment(roomId: string, callback: QueueCallback) {
 }
 
 export function safeFlushPayments(roomId: string, callback: QueueCallback) {
-  const rq = DBType.DB.get(roomId)?.queues
+  const rq = DB.get(roomId)?.queues
   if(rq !== undefined) {
     rq.payments = {
       queue: [],
       processed: 0
     }
-    DBType.DB.updateRoom(roomId,{
+    DB.updateRoom(roomId,{
       queues: rq,
     },(_) => callback(rq))
   }
@@ -978,7 +980,7 @@ export function tryDeconstruct(players: PlayerType[], properties: PropertyType[]
 }
 
 export function setDices(roomId: string, callback: (dice1: 0 | 1 | 2 | 3 | 4 | 5 | 6, dice2: 0 | 1 | 2 | 3 | 4 | 5 | 6) => void, dices: {dice1: 1 | 2 | 3 | 4 | 5 | 6, dice2: 1 | 2 | 3 | 4 | 5 | 6} | undefined) {
-  const roomDices = DBType.DB.get(roomId)?.dices
+  const roomDices = DB.get(roomId)?.dices
   if(roomDices === undefined) {
     return;
   }
@@ -988,7 +990,7 @@ export function setDices(roomId: string, callback: (dice1: 0 | 1 | 2 | 3 | 4 | 5
     roomDices.dice1 = dices.dice1
     roomDices.dice2 = dices.dice2
   }
-  DBType.DB.updateRoom(roomId,{
+  DB.updateRoom(roomId,{
     dices: roomDices
   },(_) => callback(roomDices.dice1, roomDices.dice2))
 }

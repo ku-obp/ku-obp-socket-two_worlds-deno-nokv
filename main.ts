@@ -15,7 +15,7 @@ const app = new Application();
 
 import io, { router } from "./server.ts"
 
-import { DBType } from "./manager.ts";
+import DB, {DBType} from "./manager.ts";
 
 type CreateRoomRequestPayloadType = {
   roomId: string,
@@ -30,7 +30,7 @@ router.post("/create", async (context) => {
   const bodyJSON = context.request.body({type: "json"})
   const payload = await bodyJSON.value
   try {
-    DBType.DB.initializeRoom(payload.roomId, payload.player1, payload.player2, payload.player3, payload.player4)
+    DB.initializeRoom(payload.roomId, payload.player1, payload.player2, payload.player3, payload.player4)
     context.response.body = {status: "succeeded"}
   }
   catch {
@@ -56,7 +56,7 @@ app.use(router.allowedMethods())
 export function turnEnd(roomId: string) {
   io.to(roomId).emit("next")
 
-  const allState = DBType.DB.get(roomId)
+  const allState = DB.get(roomId)
   if(allState === undefined) {
     return;
   }
@@ -82,16 +82,16 @@ export function turnEnd(roomId: string) {
     icon === nowInTurn
   })[0]
 
-  DBType.DB.updateGameState(roomId,{
+  DB.updateGameState(roomId,{
     nowInTurn
   }, (updated) => {
     io.to(roomId).emit("updateGameState", {fresh: false, gameState: updated})
   })
   
-  DBType.DB.flushDoubles(roomId)
+  DB.flushDoubles(roomId)
 
   if(Math.min(...(new_state.players.map(({cycles}) => cycles))) >= 4) {
-    const overall_finances = DBType.DB.endGame(roomId)
+    const overall_finances = DB.endGame(roomId)
     io.to(roomId).emit("endGame", overall_finances)
   }
   else {
@@ -105,7 +105,7 @@ export function turnEnd(roomId: string) {
 
 
 function checkDouble(roomId: string, playerEmail: string) {
-  const dices = DBType.DB.get(roomId)?.dices
+  const dices = DB.get(roomId)?.dices
   if(dices === undefined) {
     return;
   }
@@ -113,7 +113,7 @@ function checkDouble(roomId: string, playerEmail: string) {
     return ((!(dice1 === 0 || dice2 === 0)) && (dice1 === dice2))
   })(dices)
   if(is_double) {
-    const new_doubles = DBType.DB.commitDoubles(roomId)
+    const new_doubles = DB.commitDoubles(roomId)
     if(new_doubles !== undefined && new_doubles > 0) {
       io.to(roomId).emit("turnBegin",{
         playerNowEmail: playerEmail,
@@ -130,7 +130,7 @@ function onConnected(socket: Socket) {
   console.log(socket.id + " is connected.");
 
   socket.on("joinRoom", ({playerEmail, roomId}: {playerEmail: string, roomId: string}) => {
-    const _state = DBType.DB.get(roomId)
+    const _state = DB.get(roomId)
     try {
       if(_state === undefined) {
         throw "invalid room"
@@ -154,13 +154,13 @@ function onConnected(socket: Socket) {
   })
 
   socket.on("reportTransaction", ({type, roomId, playerEmail, cellId, amount} : {type: "construct", roomId: string, playerEmail: string, cellId: number, amount: 1} | {type: "sell", roomId: string, playerEmail: string, cellId: number, amount: 1 | 2 | 3}) => {
-    const state = DBType.DB.get(roomId)?.gameState
+    const state = DB.get(roomId)?.gameState
     if(state === undefined) {
       return;
     }
     const [players, properties] = (type === "construct") ? Manager.tryConstruct(Array.from(state.players),Array.from(state.properties),playerEmail,cellId) :
       Manager.tryDeconstruct(Array.from(state.players),Array.from(state.properties),playerEmail,cellId,amount);
-    DBType.DB.updateGameState(roomId,{
+    DB.updateGameState(roomId,{
       players,
       properties
     }, (updated) => {
@@ -172,7 +172,7 @@ function onConnected(socket: Socket) {
   })
 
   socket.on("requestBasicIncome", (roomId: string) => {
-    const state = DBType.DB.get(roomId)?.gameState
+    const state = DB.get(roomId)?.gameState
     if(state === undefined) {
       return;
     }
@@ -181,7 +181,7 @@ function onConnected(socket: Socket) {
       govIncome
     } = DBType.copyGameState(state)
     const after = Manager.distributeBasicIncome(players,govIncome)
-    DBType.DB.updateGameState(roomId,{
+    DB.updateGameState(roomId,{
       players: after.players,
       govIncome: after.government_income
     }, (updated) => {
@@ -190,7 +190,7 @@ function onConnected(socket: Socket) {
   })
 
   socket.on("jailbreakByMoney", ({roomId, playerEmail}:{roomId: string, playerEmail: string}) => {
-    const state = DBType.DB.get(roomId)?.gameState
+    const state = DB.get(roomId)?.gameState
     try {
       if(state === undefined) {
         throw {}
@@ -202,7 +202,7 @@ function onConnected(socket: Socket) {
         const players = Array.from(state.players)
         players[playerNowIdx].cash = Math.max(0, state.players[playerNowIdx].cash - 400000)
         players[playerNowIdx].remainingJailTurns = 0
-        DBType.DB.updateGameState(roomId,{
+        DB.updateGameState(roomId,{
           players
         }, (updated) => {
           io.to(roomId).emit("updateGameState", {fresh: false, gameState: updated})
@@ -220,7 +220,7 @@ function onConnected(socket: Socket) {
     
     io.to(roomId).emit("showDices", {dice1, dice2})
     
-    const state = DBType.DB.get(roomId)?.gameState;
+    const state = DB.get(roomId)?.gameState;
     if(state === undefined) {
       return;
     }
@@ -237,11 +237,11 @@ function onConnected(socket: Socket) {
         type: "byAmount",
         amount: (dice1 as number) + (dice2 as number)
       },(updated) => {
-        DBType.DB.updateGameState(roomId,updated,(_updated) => {
+        DB.updateGameState(roomId,updated,(_updated) => {
           io.to(roomId).emit("updateGameState", {fresh: false, gameState: _updated})
         })
       },(updated) => {
-        DBType.DB.updateGameState(roomId,updated,(_updated) => {
+        DB.updateGameState(roomId,updated,(_updated) => {
           io.to(roomId).emit("updateGameState", {fresh: false, gameState: _updated})
         })
       })
@@ -251,7 +251,7 @@ function onConnected(socket: Socket) {
       const {can_get_salery, state_after_move} = result
       if (can_get_salery) {
         state_before_cell_action = Manager.giveSalery(state_after_move,playerEmail,copied.govIncome, (updated) => {
-          DBType.DB.updateGameState(roomId,updated, (_updated) => {
+          DB.updateGameState(roomId,updated, (_updated) => {
             io.to(roomId).emit("updateGameState", {fresh: false, gameState: _updated})
           })
         }) ?? null
@@ -290,7 +290,7 @@ function onConnected(socket: Socket) {
         }
       })(players[idx].remainingJailTurns, (dice1 === dice2))
       players[idx].remainingJailTurns = remainingJailTurns
-      DBType.DB.updateGameState(roomId,{
+      DB.updateGameState(roomId,{
         players
       },(updated) => {
         io.to(roomId).emit("updateGameState", {fresh: false, gameState: updated})
