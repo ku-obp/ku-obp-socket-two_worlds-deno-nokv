@@ -43,7 +43,7 @@ export type AllDataType = {
 export class DBType{
   private _internal: Map<string, AllDataType>
   private constructor() {
-    this._internal = new Map<string, AllDataType>
+    this._internal = new Map<string, AllDataType>()
   }
   public room(roomId: string) {
     return this._internal.get(roomId)
