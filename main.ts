@@ -27,7 +27,9 @@ type CreateRoomRequestPayloadType = {
 
 
 
-
+router.get("/",(ctx) => {
+  ctx.response.body = "Hello World!";
+})
 router.post("/create", (context) => {
   const bodyJSON = context.request.body({type: "json"})
   bodyJSON.value.then((payload: CreateRoomRequestPayloadType) => {
@@ -40,12 +42,6 @@ router.post("/create", (context) => {
     context.response.status = 200
   })
 })
-
-
-
-app.use((ctx) => {
-  ctx.response.body = "Hello World!";
-});
 
 app.use(oakCors({
   origin: ["https://ku-obp.vercel.app", "http://localhost:3000"],
