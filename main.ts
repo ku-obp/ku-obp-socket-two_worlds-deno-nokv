@@ -1,9 +1,9 @@
-import { Application, BodyJson } from "oak"
+import { Application } from "oak"
 import { Socket } from "socket-io"
 
-import * as DBManager from "./dbManager.ts"
+import * as DBManager from "./manager.ts"
 
-import * as GameManager from "./gameManager.ts"
+import * as Manager from "./manager.ts"
 import { serve } from "http";
 
 import { oakCors } from "https://deno.land/x/cors@v1.2.2/mod.ts"
@@ -14,6 +14,8 @@ import { oakCors } from "https://deno.land/x/cors@v1.2.2/mod.ts"
 const app = new Application();
 
 import io, { router } from "./server.ts"
+
+import { DBType } from "./manager.ts";
 
 type CreateRoomRequestPayloadType = {
   roomId: string,
@@ -29,7 +31,7 @@ type CreateRoomRequestPayloadType = {
 router.post("/create", (context) => {
   const bodyJSON = context.request.body({type: "json"})
   bodyJSON.value.then((payload: CreateRoomRequestPayloadType) => {
-    GameManager.createRoom(payload.roomId, payload.player1, payload.player2, payload.player3, payload.player4)
+    DBType.DB.initializeRoom(payload.roomId, payload.player1, payload.player2, payload.player3, payload.player4)
     context.response.body = {status: "succeeded"}
   }).catch(() => {
     context.response.body = {status: "failed"}
@@ -59,56 +61,65 @@ app.use(router.allowedMethods())
 export function turnEnd(roomId: string) {
   io.to(roomId).emit("next")
 
-  const state = GameManager.getGameState(roomId)
-    const nowInTurn: 0 | 1 | 2 | 3 = ((old): 0|1|2|3 => {
-      if(old % 4 === 0) {
-        return 1
-      } else if(old % 4 === 1) {
-        return 2
-      } else if(old % 4 === 2) {
-        return 3
-      } else {
-        return 0
-      }
-    })((state.nowInTurn + 1))
-    const new_state: DBManager.GameStateType = {
-      ...GameManager.deepcopyGameState(state),
-      nowInTurn
+  const allState = DBType.DB.get(roomId)
+  if(allState === undefined) {
+    return;
+  }
+  const state = allState.gameState
+
+  const nowInTurn: 0 | 1 | 2 | 3 = ((old): 0|1|2|3 => {
+    if(old % 4 === 0) {
+      return 1
+    } else if(old % 4 === 1) {
+      return 2
+    } else if(old % 4 === 2) {
+      return 3
+    } else {
+      return 0
     }
+  })((state.nowInTurn + 1))
+  const new_state: DBManager.GameStateType = {
+    ...DBType.copyGameState(state),
+    nowInTurn
+  }
 
-    const now = new_state.players.filter(({icon}) => {
-      icon === nowInTurn
-    })[0]
+  const now = new_state.players.filter(({icon}) => {
+    icon === nowInTurn
+  })[0]
 
-    GameManager.setGameState(roomId,{
-      nowInTurn
-    }, (updated) => {
-      io.to(roomId).emit("updateGameState", {fresh: false, gameState: updated})
+  DBType.DB.updateGameState(roomId,{
+    nowInTurn
+  }, (updated) => {
+    io.to(roomId).emit("updateGameState", {fresh: false, gameState: updated})
+  })
+  
+  DBType.DB.flushDoubles(roomId)
+
+  if(Math.min(...(new_state.players.map(({cycles}) => cycles))) >= 4) {
+    const overall_finances = DBType.DB.endGame(roomId)
+    io.to(roomId).emit("endGame", overall_finances)
+  }
+  else {
+    io.to(roomId).emit("turnBegin", {
+      playerNowEmail: now.email,
+      doubles_count: 0,
+      askJailbreak: (now.remainingJailTurns > 0)
     })
-    
-    GameManager.flushDoubles(roomId)
-
-    if(Math.min(...(new_state.players.map(({cycles}) => cycles))) >= 4) {
-      const overall_finances = GameManager.endGame(roomId)
-      io.to(roomId).emit("endGame", overall_finances)
-    }
-    else {
-      io.to(roomId).emit("turnBegin", {
-        playerNowEmail: now.email,
-        doubles_count: 0,
-        askJailbreak: (now.remainingJailTurns > 0)
-      })
-    }
+  }
 }
 
 
 function checkDouble(roomId: string, playerEmail: string) {
+  const dices = DBType.DB.get(roomId)?.dices
+  if(dices === undefined) {
+    return;
+  }
   const is_double: boolean = (({dice1, dice2}) => {
     return ((!(dice1 === 0 || dice2 === 0)) && (dice1 === dice2))
-  })(GameManager.getDices(roomId))
+  })(dices)
   if(is_double) {
-    const new_doubles = GameManager.commitDoubles(roomId)
-    if(new_doubles > 0) {
+    const new_doubles = DBType.DB.commitDoubles(roomId)
+    if(new_doubles !== undefined && new_doubles > 0) {
       io.to(roomId).emit("turnBegin",{
         playerNowEmail: playerEmail,
         doubles_count: new_doubles,
@@ -124,19 +135,22 @@ function onConnected(socket: Socket) {
   console.log(socket.id + " is connected.");
 
   socket.on("joinRoom", ({playerEmail, roomId}: {playerEmail: string, roomId: string}) => {
-    const _gameState = GameManager.getGameState(roomId)
+    const _state = DBType.DB.get(roomId)
     try {
-      const gameState: DBManager.GameStateType = GameManager.deepcopyGameState(_gameState)
+      if(_state === undefined) {
+        throw "invalid room"
+      }
+      const gameState: DBManager.GameStateType = DBType.copyGameState(_state.gameState)
       socket.join(roomId)
       socket.emit("joinSucceed")
       const isPlayable = gameState.players.map(({email}) => email).includes(playerEmail)
       socket.emit("updateGameState", { fresh: true, gameState, isPlayable })
-      const doubles_count = GameManager.getDoubles(roomId)
+      const doubles_count = _state.doublesCount
       socket.emit("refreshDoubles", doubles_count)
-      const dices = GameManager.getDices(roomId)
+      const dices = _state.dices
       socket.emit("showDices", dices)
-    } catch(_) {
-      socket.emit("joinFailed", {msg: "invalid room"})
+    } catch(msg) {
+      socket.emit("joinFailed", {msg: String(msg)})
     }
   })
 
@@ -145,13 +159,13 @@ function onConnected(socket: Socket) {
   })
 
   socket.on("reportTransaction", ({type, roomId, playerEmail, cellId, amount} : {type: "construct", roomId: string, playerEmail: string, cellId: number, amount: 1} | {type: "sell", roomId: string, playerEmail: string, cellId: number, amount: 1 | 2 | 3}) => {
-    const state = DBManager.gameStates[roomId]
+    const state = DBType.DB.get(roomId)?.gameState
     if(state === undefined) {
       return;
     }
-    const [players, properties] = (type === "construct") ? GameManager.tryConstruct(Array.from(state.players),Array.from(state.properties),playerEmail,cellId) :
-      GameManager.tryDeconstruct(Array.from(state.players),Array.from(state.properties),playerEmail,cellId,amount);
-    GameManager.setGameState(roomId,{
+    const [players, properties] = (type === "construct") ? Manager.tryConstruct(Array.from(state.players),Array.from(state.properties),playerEmail,cellId) :
+      Manager.tryDeconstruct(Array.from(state.players),Array.from(state.properties),playerEmail,cellId,amount);
+    DBType.DB.updateGameState(roomId,{
       players,
       properties
     }, (updated) => {
@@ -163,13 +177,16 @@ function onConnected(socket: Socket) {
   })
 
   socket.on("requestBasicIncome", (roomId: string) => {
-    const state = GameManager.getGameState(roomId)
+    const state = DBType.DB.get(roomId)?.gameState
+    if(state === undefined) {
+      return;
+    }
     const {
       players,
       govIncome
-    } = GameManager.deepcopyGameState(state)
-    const after = GameManager.distributeBasicIncome(players,govIncome)
-    GameManager.setGameState(roomId,{
+    } = DBType.copyGameState(state)
+    const after = Manager.distributeBasicIncome(players,govIncome)
+    DBType.DB.updateGameState(roomId,{
       players: after.players,
       govIncome: after.government_income
     }, (updated) => {
@@ -178,9 +195,11 @@ function onConnected(socket: Socket) {
   })
 
   socket.on("jailbreakByMoney", ({roomId, playerEmail}:{roomId: string, playerEmail: string}) => {
-    const state = DBManager.gameStates[roomId]
-
+    const state = DBType.DB.get(roomId)?.gameState
     try {
+      if(state === undefined) {
+        throw {}
+      }
       const playerNowIdx = (state.players ?? []).findIndex((player) => player.email === playerEmail)
       if(playerNowIdx < 0) {
         return;
@@ -188,7 +207,7 @@ function onConnected(socket: Socket) {
         const players = Array.from(state.players)
         players[playerNowIdx].cash = Math.max(0, state.players[playerNowIdx].cash - 400000)
         players[playerNowIdx].remainingJailTurns = 0
-        GameManager.setGameState(roomId,{
+        DBType.DB.updateGameState(roomId,{
           players
         }, (updated) => {
           io.to(roomId).emit("updateGameState", {fresh: false, gameState: updated})
@@ -206,8 +225,11 @@ function onConnected(socket: Socket) {
     
     io.to(roomId).emit("showDices", {dice1, dice2})
     
-    const state = GameManager.getGameState(roomId);
-    const copied = GameManager.deepcopyGameState(state)
+    const state = DBType.DB.get(roomId)?.gameState;
+    if(state === undefined) {
+      return;
+    }
+    const copied = DBType.copyGameState(state)
     const players = Array.from(copied.players);
     const idx = players.findIndex((player) => (player.email === playerEmail));
     if(idx < 0) {
@@ -215,32 +237,40 @@ function onConnected(socket: Socket) {
     }
     if(!flag_jailbreak) {
       let state_before_cell_action: DBManager.GameStateType | null = null
-      const {can_get_salery, state_after_move} = GameManager.movePlayer(copied,idx,{
+      const result = Manager.movePlayer(copied,idx,{
         kind: "forward",
         type: "byAmount",
         amount: (dice1 as number) + (dice2 as number)
       },(updated) => {
-        GameManager.setGameState(roomId,updated,(_updated) => {
+        DBType.DB.updateGameState(roomId,updated,(_updated) => {
           io.to(roomId).emit("updateGameState", {fresh: false, gameState: _updated})
         })
       },(updated) => {
-        GameManager.setGameState(roomId,updated,(_updated) => {
+        DBType.DB.updateGameState(roomId,updated,(_updated) => {
           io.to(roomId).emit("updateGameState", {fresh: false, gameState: _updated})
         })
       })
+      if(result === null) {
+        return;
+      }
+      const {can_get_salery, state_after_move} = result
       if (can_get_salery) {
-        state_before_cell_action = GameManager.giveSalery(state_after_move,playerEmail,copied.govIncome, (updated) => {
-          GameManager.setGameState(roomId,updated, (_updated) => {
+        state_before_cell_action = Manager.giveSalery(state_after_move,playerEmail,copied.govIncome, (updated) => {
+          DBType.DB.updateGameState(roomId,updated, (_updated) => {
             io.to(roomId).emit("updateGameState", {fresh: false, gameState: _updated})
           })
-        })
+        }) ?? null
       }
       else {
         state_before_cell_action = state_after_move
       }
 
+      if(state_before_cell_action === null) {
+        return;
+      }
+
       // 도착한 곳에 따른 액션 수행
-      const task = GameManager.cellAction(state_before_cell_action,playerEmail)
+      const task = Manager.cellAction(state_before_cell_action,playerEmail)
       if(task === null) {
         return;
       }
@@ -248,7 +278,7 @@ function onConnected(socket: Socket) {
       if(task.turn_finished) {
         checkDouble(roomId,playerEmail)
       } else if(task.cellType === "chance") {
-        const task_by_chance = GameManager.cellAction(task.state_after,playerEmail)
+        const task_by_chance = Manager.cellAction(task.state_after,playerEmail)
         const state_after_chance = task_by_chance?.state_after
         if(state_after_chance === undefined || state_after_chance === null) {
           return
@@ -265,7 +295,7 @@ function onConnected(socket: Socket) {
         }
       })(players[idx].remainingJailTurns, (dice1 === dice2))
       players[idx].remainingJailTurns = remainingJailTurns
-      GameManager.setGameState(roomId,{
+      DBType.DB.updateGameState(roomId,{
         players
       },(updated) => {
         io.to(roomId).emit("updateGameState", {fresh: false, gameState: updated})

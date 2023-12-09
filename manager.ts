@@ -1,22 +1,67 @@
-const INITIAL_CASH = 6000000;
+export type RoomDictionray<T> = {
+    [roomId: string]: T
+}
 
-import io from "./server.ts"
 
-import * as Utils from "./utils.ts"
+export type PlayerIconType = 0 | 1 | 2 | 3
 
-import * as DBManager from "./dbManager.ts"
+export type QueuesType = {
+  chances: {
+    queue: string[],
+    processed: number
+  },
+  payments: {
+      queue: {
+          cellId: number,
+          mandatory: PaymentTransactionJSON | null,
+          optional: PaymentTransactionJSON | null
+      }[],
+      processed: number
+  }
+}
 
-export function createRoom(roomId: string, host: string, ...guests: string[]) {
-    DBManager.roomData[roomId] = {
+export type RoomDataType = {
+  hostEmail: string;
+  maxGuests: number;
+  guests: string[];
+  isStarted: boolean;
+  isEnded: boolean;
+}
+
+export type AllDataType = {
+  roomId: string,
+  roomData: RoomDataType,
+  gameState: GameStateType,
+  queues: QueuesType,
+  doublesCount: number,
+  dices: {
+    dice1: DiceType,
+    dice2: DiceType
+  }
+}
+
+export class DBType{
+  private _internal: Map<string, AllDataType>
+  private constructor() {
+    this._internal = new Map<string, AllDataType>
+  }
+  public room(roomId: string) {
+    return this._internal.get(roomId)
+  }
+  
+  public initializeRoom(roomId: string, host: string, ...guests: string[]) {
+    const room: AllDataType = {
+      roomId,
+      roomData: {
         hostEmail: host,
-        guests: guests,
         maxGuests: guests.length,
+        guests: guests,
         isStarted: true,
         isEnded: false
-    }
-    const initial_state: DBManager.GameStateType = {
+      },
+      gameState: {
         roomId: roomId,
-        players: ((arr: string[]): DBManager.PlayerType[] => [
+        players: ((arr: string[]): PlayerType[] => [
             {email: arr[0], icon: 0,location: 0, displayLocation: 0, cash: INITIAL_CASH, cycles: 0, university: "notYet", tickets: {discountRent: 0, bonus: false, doubleLotto: 0}, remainingJailTurns: 0},
             {email: arr[1], icon: 1,location: 0, displayLocation: 0, cash: INITIAL_CASH, cycles: 0, university: "notYet", tickets: {discountRent: 0, bonus: false, doubleLotto: 0}, remainingJailTurns: 0},
             {email: arr[2], icon: 2,location: 0, displayLocation: 0, cash: INITIAL_CASH, cycles: 0, university: "notYet", tickets: {discountRent: 0, bonus: false, doubleLotto: 0}, remainingJailTurns: 0},
@@ -29,103 +74,241 @@ export function createRoom(roomId: string, host: string, ...guests: string[]) {
         sidecars: {
             limitRents: 0
         }
+      },
+      doublesCount: 0,
+      dices: {
+        dice1: 0,
+        dice2: 0
+      },
+      queues: {
+        chances: {
+          queue: [],
+          processed: 0
+        },
+        payments: {
+          queue: [],
+          processed: 0
+        }
+      }
     }
-    DBManager.gameStates[roomId] = initial_state
-    DBManager.roomDoublesCount[roomId] = 0
-}
+    this._internal.set(roomId, room)
+  }
 
-export function removeRoom(roomId: string) {
-    delete DBManager.roomData[roomId]
-    delete DBManager.gameStates[roomId]
-    delete DBManager.roomDoublesCount[roomId]
-}
+  public removeRoom(roomId: string) {
+    return this._internal.delete(roomId)
+  }
 
-export function getRoomQueue(roomId: string) {
-    return DBManager.roomQueue[roomId]
-}
+  public get(roomId: string) {
+    return this._internal.get(roomId)
+  }
 
-export function getDoubles(roomId: string) {
-    return DBManager.roomDoublesCount[roomId]
-}
+  private static copyQueue<T>(q: {queue: T[], processed: number}) {
+    return {
+      queue: Array.from(q.queue),
+      processed: q.processed
+    }
+  }
 
-export function commitDoubles(roomId: string) {
-    const doubles_count = DBManager.roomDoublesCount[roomId]
+  public static copyGameState(g: GameStateType): GameStateType {
+    return {
+      roomId: String(g.roomId),
+      players: Array.from(g.players),
+      properties: Array.from(g.properties),
+      nowInTurn: g.nowInTurn,
+      govIncome: g.govIncome,
+      charityIncome: g.charityIncome,
+      sidecars: g.sidecars
+    }
+  }
+
+  private static copyIfDefined<T>(copy: (v: T) => T, a: T, b?: T): T {
+    if(b === undefined || b === null) {
+      return a
+    } else {
+      return copy(b)
+    }
+  }
+
+  private static overwrite(orig: AllDataType, ...updates: Partial<AllDataType>[]): AllDataType {
+    return updates.reduce<AllDataType>(
+      (acc, curr) => {
+        const gameState = this.copyIfDefined(this.copyGameState,acc.gameState, curr.gameState)
+        const queues: QueuesType = curr.queues ?? {
+          chances: this.copyQueue(acc.queues.chances),
+          payments: this.copyQueue(acc.queues.payments)
+        }
+        const doublesCount = curr.doublesCount ?? acc.doublesCount
+        const {
+          dice1, dice2
+        } = curr.dices ?? acc.dices
+        return {
+          roomId: orig.roomId,
+          roomData: orig.roomData,
+          gameState,
+          queues,
+          doublesCount,
+          dices: {dice1, dice2}
+        }
+      },orig
+    )
+  }
+
+  private static overwriteState(orig: GameStateType, ...updates: Partial<GameStateType>[]): GameStateType {
+    return updates.reduce<GameStateType>(
+      (acc, curr) => {
+        const output: GameStateType = {
+          roomId: this.copyIfDefined(String,acc.roomId, curr.roomId),
+          players: this.copyIfDefined(Array.from<PlayerType>,acc.players,curr.players),
+          properties: this.copyIfDefined(Array.from<PropertyType>,acc.properties,curr.properties),
+          nowInTurn: curr.nowInTurn ?? acc.nowInTurn,
+          govIncome: curr.govIncome ?? acc.govIncome,
+          charityIncome: curr.charityIncome ?? acc.charityIncome,
+          sidecars: curr.sidecars ?? acc.sidecars
+        }
+        return output
+      },orig
+    )
+  }
+
+  public updateRoom(roomId: string, updates: Partial<AllDataType>, callback: (updated: AllDataType) => void) {
+    const got = this.get(roomId)
+    if(got === undefined) {
+      return;
+    }
+    const updated = DBType.overwrite(got,updates)
+    this._internal.set(roomId, updated)
+    callback(updated)
+  }
+
+  public updateGameState(roomId: string, updates: Partial<GameStateType>, callback: (updated: GameStateType) => void) {
+    const got = this.get(roomId)
+    if(got === undefined) {
+      return;
+    }
+    const updatedState = DBType.overwriteState(got.gameState,updates)
+    const updated = DBType.overwrite(got,{
+      gameState: updatedState
+    })
+    this._internal.set(roomId, updated)
+    callback(updatedState)
+    return updatedState
+  }
+
+  public commitDoubles(roomId: string) {
+    const got = this._internal.get(roomId)
+    if(got === undefined) {
+      return;
+    }
+    const doubles_count = got.doublesCount
     const new_doubles_count = (doubles_count < 3) ? Math.min(Math.max(0,doubles_count + 1), 3) : 0
-    DBManager.roomDoublesCount[roomId] = new_doubles_count
+    got.doublesCount = new_doubles_count
+    this._internal.set(roomId, got)
     return new_doubles_count
-}
+  }
 
-export function flushDoubles(roomId: string) {
-    DBManager.roomDoublesCount[roomId] = 0
-}
+  public flushDoubles(roomId: string) {
+    const got = this._internal.get(roomId)
+    if(got === undefined) {
+      return;
+    }
+    got.doublesCount = 0
+    this._internal.set(roomId, got)
+  }
 
-function joinFinances(players: DBManager.PlayerType[], properties: DBManager.PropertyType[]): {
+  private static joinFinances(players: PlayerType[], properties: PropertyType[]): {
     playerEmail: string,
     cash: number,
     owns: number
-}[] {
-    const output = players.map(({email, cash}) => ({playerEmail: email, cash, owns: 0}))
-    for (let {playerEmail, owns} of output) {
-      const own_properties_count = properties.filter(({ownerEmail}) => ownerEmail === playerEmail).map(({count}) => count)
-      owns = owns + own_properties_count.reduce((sum,curr_count) => (sum + curr_count),0)
-    }
-    return output
-}
+  }[] {
+      const output = players.map(({email, cash}) => ({playerEmail: email, cash, owns: 0}))
+      for (let {playerEmail, owns} of output) {
+        const own_properties_count = properties.filter(({ownerEmail}) => ownerEmail === playerEmail).map(({count}) => count)
+        owns = owns + own_properties_count.reduce((sum,curr_count) => (sum + curr_count),0)
+      }
+      return output
+  }
 
-function calculateOverallFinances(players: DBManager.PlayerType[], properties: DBManager.PropertyType[]): {
+  private static calculateOverallFinances(players: PlayerType[], properties: PropertyType[]): {
     playerEmail: string,
     value: number
   }[] {
-    return joinFinances(players,properties).map(({playerEmail,cash,owns}) => ({
+    return this.joinFinances(players,properties).map(({playerEmail,cash,owns}) => ({
       playerEmail,
       value: (owns * 300000) + cash
     }))
   }
-  
-export function deepcopyGameState(state: DBManager.GameStateType): DBManager.GameStateType {
-    const {
-        roomId,
-        players,
-        properties,
-        nowInTurn,
-        govIncome,
-        charityIncome,
-        sidecars
-    } = state
-    const copied: DBManager.GameStateType = {
-        roomId,
-        players: Array.from(players),
-        properties: Array.from(properties),
-        nowInTurn,
-        govIncome,
-        charityIncome,
-        sidecars
-    }
-    return copied
-}
 
-export function endGame(roomId: string) {
-    const state = getGameState(roomId)
-    const copied = deepcopyGameState(state)
-    const overall_finances = calculateOverallFinances(copied.players,copied.properties)
-    DBManager.roomData[roomId].isEnded = true
+  public endGame(roomId: string) {
+    const allState = this.get(roomId)
+    if(allState === undefined) {
+      return []
+    }
+    const copied = DBType.copyGameState(allState.gameState)
+    const overall_finances = DBType.calculateOverallFinances(copied.players,copied.properties)
+    allState.roomData.isEnded = true
+    this._internal.set(roomId,allState)
     return overall_finances
+  }
+
+  public static DB: DBType = new DBType()
 }
 
-export function getGameState(roomId: string) {
-    return DBManager.gameStates[roomId]
+
+
+export type UniversityStateType = "notYet" | "undergraduate" | "graduated"
+
+export type PlayerType = {
+    email: string,
+    icon: PlayerIconType,
+    location: number,
+    displayLocation: number,
+    cash: number,
+    cycles: number,
+    university: UniversityStateType,
+    tickets: {
+        discountRent: number,
+        bonus: boolean,
+        doubleLotto: number,
+    },
+    remainingJailTurns: number,
 }
 
-export function setGameState(roomId: string, new_state: Partial<DBManager.GameStateType>, callback: (updated: DBManager.GameStateType) => void) {
-    const old_state = deepcopyGameState(DBManager.gameStates[roomId])
-    
-    const tmp: DBManager.GameStateType = {
-        ...old_state,
-        ...new_state
+export type PropertyType = {
+    ownerEmail: string,
+    count: number,
+    cellId: number
+}
+
+export type GameStateType = {
+    roomId: string,
+    players: PlayerType[],
+    properties: PropertyType[],
+    nowInTurn: number,
+    govIncome: number,
+    charityIncome: number,
+    sidecars: {
+        limitRents: number
     }
-    DBManager.gameStates[roomId] = tmp
-    callback(tmp)
 }
+
+import { CellType } from "./cells.ts";
+
+export type TaskType = {
+    state_after: GameStateType,
+    cellType: CellType,
+    turn_finished: boolean
+}
+
+export type DiceType = 0 | 1 | 2 | 3 | 4 | 5 | 6
+
+
+
+
+const INITIAL_CASH = 6000000;
+
+import io from "./server.ts"
+
+import * as Utils from "./utils.ts"
 
 
 export class PaymentTransaction {
@@ -215,7 +398,7 @@ export class PaymentTransaction {
         }
     }
   
-    public static P2G(playerIcon: DBManager.PlayerIconType, amount: number) {
+    public static P2G(playerIcon: PlayerIconType, amount: number) {
         switch(playerIcon) {
             case 0:
             return new PaymentTransaction({
@@ -246,7 +429,7 @@ export class PaymentTransaction {
         })
     }
   
-    public static P2C(playerIcon: DBManager.PlayerIconType, amount: number) {
+    public static P2C(playerIcon: PlayerIconType, amount: number) {
         switch(playerIcon) {
             case 0:
             return new PaymentTransaction({
@@ -271,7 +454,7 @@ export class PaymentTransaction {
         }
     }
   
-    public static unidirectional(playerIcon: DBManager.PlayerIconType, amount: number) {
+    public static unidirectional(playerIcon: PlayerIconType, amount: number) {
         switch(playerIcon) {
             case 0:
             return new PaymentTransaction({
@@ -292,8 +475,8 @@ export class PaymentTransaction {
         }
     }
   
-    public static P2P(from: DBManager.PlayerIconType, to: DBManager.PlayerIconType, amount: number): PaymentTransaction {
-        const different_pair = Utils.DifferentNumberPair.checkDifferent<DBManager.PlayerIconType>(from, to)
+    public static P2P(from: PlayerIconType, to: PlayerIconType, amount: number): PaymentTransaction {
+        const different_pair = Utils.DifferentNumberPair.checkDifferent<PlayerIconType>(from, to)
         return Utils.nullableMapper(different_pair,({a,b}) => {
             return PaymentTransaction.unidirectional(a, -amount).merge(PaymentTransaction.unidirectional(b, amount))
         },{
@@ -320,7 +503,7 @@ import { Timeout } from "https://deno.land/x/timeout@2.4/mod.ts"
   // @deno-types="npm:xrange@2.2.1"
 import xrange from "npm:xrange@2.2.1"
 
-export const movePlayer = (game_state: DBManager.GameStateType, playerIdx: number, args: {
+export const movePlayer = (game_state: GameStateType, playerIdx: number, args: {
     kind: "forward" | "backward",
     type: "byAmount"
     amount: number
@@ -331,11 +514,11 @@ export const movePlayer = (game_state: DBManager.GameStateType, playerIdx: numbe
   } | {
     kind: "warp",
     dest: number
-  }, eachCallback: (updated: Partial<DBManager.GameStateType>) => void, finalCallback: (updated: Partial<DBManager.GameStateType>) => void): {
+  }, eachCallback: (updated: Partial<GameStateType>) => void, finalCallback: (updated: Partial<GameStateType>) => void): {
     can_get_salery: boolean,
     dest: number,
-    state_after_move: DBManager.GameStateType
-} => {
+    state_after_move: GameStateType
+} | null => {
     let dest = 0;
     let tmp_players = Array.from(game_state.players)
     const begin = game_state.players[playerIdx].location
@@ -369,36 +552,36 @@ export const movePlayer = (game_state: DBManager.GameStateType, playerIdx: numbe
     finalCallback({
       players: tmp_players
     })
-    const state_after_move = getGameState(game_state.roomId)
-    return {can_get_salery, dest, state_after_move }
+    const state_after_move = DBType.DB.get(game_state.roomId)?.gameState
+    return (state_after_move !== undefined) ? {can_get_salery, dest, state_after_move } : null
 }
 
-const movePrimitive = (players: DBManager.PlayerType[], playerIdx: number, new_location: number, callback: (updated: Partial<DBManager.GameStateType>) => void) => {
-    const tmp = Array.from(players)
-    tmp[playerIdx].displayLocation = new_location % 54
-    const update: Partial<DBManager.GameStateType> = {
-      players: tmp
-    }
-    Timeout.wait(600)
+const movePrimitive = (players: PlayerType[], playerIdx: number, new_location: number, callback: (updated: Partial<GameStateType>) => void) => {
+  const tmp = Array.from(players)  
+  Timeout.wait(600)
     .then(() => {
+      tmp[playerIdx].displayLocation = new_location % 54
+      const update: Partial<GameStateType> = {
+        players: tmp
+      }
       callback(update)
     })
     return tmp
 }
   
-export function distributeBasicIncome(players: DBManager.PlayerType[], government_income: number) {
+export function distributeBasicIncome(players: PlayerType[], government_income: number) {
     return {
       players: players.map((player) => {
         return {
           ...player,
           cash: player.cash + government_income / 4
         }
-      }) as DBManager.PlayerType[],
+      }) as PlayerType[],
       government_income: 0
     }
 }
 
-export function giveSalery(state: DBManager.GameStateType, playerEmail: string, government_income: number, callback: (updated: Partial<DBManager.GameStateType>) => void): DBManager.GameStateType {
+export function giveSalery(state: GameStateType, playerEmail: string, government_income: number, callback: (updated: Partial<GameStateType>) => void): GameStateType | undefined {
     const tmp = Array.from(state.players)
     const transactions: PaymentTransaction[] = []
     const player_get_salery = tmp.find((player) => player.email === playerEmail)
@@ -443,30 +626,26 @@ export function giveSalery(state: DBManager.GameStateType, playerEmail: string, 
       return acc.merge(curr)
     },new PaymentTransaction({})).flat
   
-    const players_after: DBManager.PlayerType[] = state.players.map((player) => {
+    const players_after: PlayerType[] = state.players.map((player) => {
       return {
         ...player,
         cash: player.cash + overall.playerTransactions[player.icon]
       };
     })
     
-    const updates: DBManager.GameStateType = {
-        ...deepcopyGameState(state),
-        players: players_after,
-        govIncome: 0
-    }
-    DBManager.gameStates[state.roomId] = updates
-    callback(updates)
-    return updates;
+    return DBType.DB.updateGameState(state.roomId,{
+      players: players_after,
+      govIncome: 0
+    },callback)
 }
 
-const universityAction = (university: DBManager.UniversityStateType): DBManager.UniversityStateType => {
+const universityAction = (university: UniversityStateType): UniversityStateType => {
     if(university === "notYet") return "undergraduate"
     else return "graduated"
 }
 
 
-const jailAction = (roomId: string, players: DBManager.PlayerType[], playerIdx_now: number) => {
+const jailAction = (roomId: string, players: PlayerType[], playerIdx_now: number) => {
     const player_updates = Array.from(players)
     players[playerIdx_now].remainingJailTurns = ((remainingJailTurns) => {
         if(remainingJailTurns <= 0) {
@@ -476,16 +655,17 @@ const jailAction = (roomId: string, players: DBManager.PlayerType[], playerIdx_n
         }
     })(players[playerIdx_now].remainingJailTurns)
     
-    setGameState(roomId, {
+
+    const state_after = DBType.DB.updateGameState(roomId, {
       players: player_updates
     },(updated) => {
       io.to(roomId).emit("updateGameState", {fresh: false, gameState: updated})
     })
-    const state_after = getGameState(roomId)
+    
     return state_after
 }
 
-export const cellAction = (state: DBManager.GameStateType, playerEmail: string): DBManager.TaskType | null => {
+export const cellAction = (state: GameStateType, playerEmail: string): TaskType | null => {
     const roomId = state.roomId
     const playerIdx_now = state.players.findIndex((player) => player.email === playerEmail)
     if(playerIdx_now >= 0) {
@@ -509,55 +689,66 @@ export const cellAction = (state: DBManager.GameStateType, playerEmail: string):
             io.to(roomId).emit("syncQueue",{kind: "notifyChanceCardAcquistion", queues: q,payload: c})
           }
           const state_after = chanceAction(roomId,  state, playerEmail, chanceId, chanceActionCallback)
-          return {
-            state_after,
-            cellType: type,
-            turn_finished: false
-          }
+          if(state_after !== null) {
+            return {
+              state_after,
+              cellType: type,
+              turn_finished: false
+            }
+          } else {return null}
         } else if(type === "transportation") {
           const dest = (cell as Transportation).dest
-          const {state_after_move} = movePlayer(state,playerIdx_now,{
+          const after_move = movePlayer(state,playerIdx_now,{
             kind: "warp",
             dest: dest
           },(updated) => {
-            setGameState(roomId,updated,(_updated) => {
+            DBType.DB.updateGameState(roomId,updated,(_updated) => {
               io.to(roomId).emit("updateGameState", {fresh: false, gameState: _updated})
             })
           },(updated) => {
-            setGameState(roomId,updated,(_updated) => {
+            DBType.DB.updateGameState(roomId,updated,(_updated) => {
               io.to(roomId).emit("updateGameState", {fresh: false, gameState: _updated})
             })
           })
-          return {
-            state_after: state_after_move,
-            cellType: type,
-            turn_finished: true
+          if(after_move !== null) {
+            return {
+              state_after: after_move.state_after_move,
+              cellType: type,
+              turn_finished: true
+            }
+          } else {
+            return null
           }
         } else {
-          const updates: Partial<DBManager.GameStateType> = ((players: DBManager.PlayerType[]) => {
+          const updates: Partial<GameStateType> = ((players: PlayerType[]) => {
             const players_new = Array.from(players)
             players_new[playerIdx_now].university = universityAction(players_new[playerIdx_now].university)
             return {
               players: players_new
             }
           })(state.players)
-          setGameState(roomId,updates,(updated) => {
+          const after = DBType.DB.updateGameState(roomId,updates,(updated) => {
             io.to(roomId).emit("updateGameState", {fresh: false, gameState: updated})
           })
-          const state_after = getGameState(roomId)
+          if(after !== undefined) {  
+            return {
+              state_after: after,
+              cellType: type,
+              turn_finished: true
+            }
+          }
+          else {return null}
+        }
+      } else if(type === "jail") {
+        const state_after = jailAction(roomId,state.players,playerIdx_now)
+        if (state_after !== undefined) {
           return {
             state_after,
             cellType: type,
             turn_finished: true
           }
-        }
-      } else if(type === "jail") {
-        const state_after = jailAction(roomId,state.players,playerIdx_now)
-        
-        return {
-          state_after,
-          cellType: type,
-          turn_finished: true
+        } else {
+          return null
         }
       } else { // 돈을 지불하는 칸들
         const p =  transact(playerEmail,Array.from(state.players),Array.from(state.properties),cell)
@@ -597,132 +788,122 @@ export type QueueCallback = ({chances, payments}: {chances: {queue: string[], pr
 }[], processed: number}}) => void
 
 export function safeEnqueueChance(roomId: string, chanceId: string, callback: QueueCallback) {
-    const callbackParams = (() => {
-      try {
-        const {chances} = DBManager.roomQueue[roomId]
-        DBManager.roomQueue[roomId].chances = {
-            queue: chances.queue.concat(chanceId),
-            processed: chances.processed
-        }
-        return DBManager.roomQueue[roomId]
-      } catch(_) {
-        DBManager.roomQueue[roomId] = {
-            chances: {
-                queue: [chanceId],
-                processed: 0
-              },
-              payments: {
-                queue: [],
-                processed: 0
-              }
-        }
-        return DBManager.roomQueue[roomId]
+    const newRq = (() => {
+      const queues = DBType.DB.get(roomId)?.queues
+      if(queues === undefined) {
+        return;
       }
+      queues.chances = {
+          queue: queues.chances.queue.concat(chanceId),
+          processed: queues.chances.processed
+      }
+      return queues
     })()
-    callback(callbackParams)
+    if(newRq !== undefined) {
+      DBType.DB.updateRoom(roomId,{
+        queues: newRq
+      },(_) => callback(newRq))
+    }
 }
 
 export function safeDequeueChance(roomId: string, callback: QueueCallback) {
-  const rq = DBManager.roomQueue[roomId]
-  if(rq === undefined) {
-    return null
-  } else {
-    const {chances, payments} = rq
-    const length = chances.queue.length
-    const idx = chances.processed
-    if(idx >= length) {
-      return null
+  const rq = DBType.DB.get(roomId)?.queues
+  try {
+    if(rq === undefined) {
+      throw {}
     } else {
-      const output = chances.queue[idx]
-      const new_chances = {
-        queue: chances.queue,
-        processed: Math.min(idx + 1,length)
+      const length = rq.chances.queue.length
+      const idx = rq.chances.processed
+      if(idx >= length) {
+        throw {}
+      } else {
+        const output = rq.chances.queue[idx]
+        rq.chances.processed = Math.min(idx + 1,length)
+        DBType.DB.updateRoom(roomId,{
+          queues: rq
+        },(_) => callback(rq))
+        return output
       }
-      DBManager.roomQueue[roomId].chances = new_chances
-      callback({chances: new_chances, payments})
-      return output
     }
+  }
+  catch {
+    return null
   }
 }
 
 export function safeFlushChances(roomId: string, callback: QueueCallback) {
-  DBManager.roomQueue[roomId].chances = {
-    queue: [],
-    processed: 0
+  const rq = DBType.DB.get(roomId)?.queues
+  if(rq !== undefined) {
+    rq.chances = {
+      queue: new Array<string>(),
+      processed: 0
+    }
+    DBType.DB.updateRoom(roomId,{
+      queues: rq,
+    },(_) => callback(rq))
   }
-  callback(DBManager.roomQueue[roomId])
 }
 
 export function safeEnqueuePayment(roomId: string, cellId: number, {mandatory, optional}: {mandatory: PaymentTransaction | null, optional: PaymentTransaction | null}, callback: QueueCallback) {
-  const rq = DBManager.roomQueue[roomId]
-  const new_item = {
-    cellId,
-    mandatory: Utils.nullableMapper(mandatory,PaymentTransaction.toJSON,{mapNullIsGenerator: false, constant: null}),
-    optional: Utils.nullableMapper(optional,PaymentTransaction.toJSON,{mapNullIsGenerator: false, constant: null})
+  const newRq = (() => {
+    const queues = DBType.DB.get(roomId)?.queues
+    if(queues === undefined) {
+      return;
+    }
+    queues.payments.queue = queues.payments.queue.concat({cellId, mandatory,optional})
+    return queues
+  })()
+  if(newRq !== undefined) {
+    DBType.DB.updateRoom(roomId,{
+      queues: newRq
+    },(_) => callback(newRq))
   }
-  try {
-    const {payments} =  rq
-    const updates = {
-      queue: payments.queue.concat(new_item),
-      processed: payments.processed
-    }
-    DBManager.roomQueue[roomId].payments = updates
-  } catch(_) {
-    DBManager.roomQueue[roomId].chances = {
-      queue: [],
-      processed: 0
-    }
-    DBManager.roomQueue[roomId].payments = {
-      queue: [new_item],
-      processed: 0
-    }
-  }
-  callback(DBManager.roomQueue[roomId])
 }
 
 export function safeDequeuePayment(roomId: string, callback: QueueCallback) {
-  const rq = DBManager.roomQueue[roomId]
+  const rq = DBType.DB.get(roomId)?.queues
   try {
-    const {payments} = rq
-    const length = payments.queue.length
-    const idx = payments.processed
-    if(idx >= length) {
-      return null
+    if(rq === undefined) {
+      throw {}
     } else {
-      const json = payments.queue[idx]
-      const converted = {
-        cellId: json.cellId,
-        mandatory: Utils.nullableMapper(json.mandatory,PaymentTransaction.fromJSON,{mapNullIsGenerator: false, constant: null}),
-        optional: Utils.nullableMapper(json.optional,PaymentTransaction.fromJSON,{mapNullIsGenerator: false, constant: null})
+      const length = rq.payments.queue.length
+      const idx = rq.payments.processed
+      if(idx >= length) {
+        throw {}
+      } else {
+        const json = rq.payments.queue[idx]
+        rq.payments.processed = Math.min(idx + 1,length)
+        DBType.DB.updateRoom(roomId,{
+          queues: rq
+        },(_) => callback(rq))
+        const converted = {
+          cellId: json.cellId,
+          mandatory: Utils.nullableMapper(json.mandatory,PaymentTransaction.fromJSON,{mapNullIsGenerator: false, constant: null}),
+          optional: Utils.nullableMapper(json.optional,PaymentTransaction.fromJSON,{mapNullIsGenerator: false, constant: null})
+        }
+        return converted
       }
-      const updates = {
-        queue: payments.queue,
-        processed: Math.min(idx + 1,length)
-      }
-
-      DBManager.roomQueue[roomId].payments = updates
-      callback(DBManager.roomQueue[roomId])
-      return converted
     }
-  } catch (_) {
-    return;
+  }
+  catch {
+    return null
   }
 }
 
 export function safeFlushPayments(roomId: string, callback: QueueCallback) {
-  try {
-    DBManager.roomQueue[roomId].payments = {
+  const rq = DBType.DB.get(roomId)?.queues
+  if(rq !== undefined) {
+    rq.payments = {
       queue: [],
       processed: 0
     }
-    callback(DBManager.roomQueue[roomId])
-  } catch(_) {
-    return;
+    DBType.DB.updateRoom(roomId,{
+      queues: rq,
+    },(_) => callback(rq))
   }
-  
 }
 
-export function tryConstruct(players: DBManager.PlayerType[], properties: DBManager.PropertyType[], playerEmail: string, location: number): [DBManager.PlayerType[],DBManager.PropertyType[]] {
+export function tryConstruct(players: PlayerType[], properties: PropertyType[], playerEmail: string, location: number): [PlayerType[],PropertyType[]] {
   const property_foundIdx = properties.findIndex(({cellId}) => cellId === location)
   const is_buildable = ((cell) => {
     if(property_foundIdx < 0) {
@@ -757,7 +938,7 @@ export function tryConstruct(players: DBManager.PlayerType[], properties: DBMana
   }
 }
 
-export function tryDeconstruct(players: DBManager.PlayerType[], properties: DBManager.PropertyType[], playerEmail: string, location: number, amount = 1): [DBManager.PlayerType[],DBManager.PropertyType[]] {
+export function tryDeconstruct(players: PlayerType[], properties: PropertyType[], playerEmail: string, location: number, amount = 1): [PlayerType[],PropertyType[]] {
   const property_foundIdx = properties.findIndex(({cellId}) => cellId === location)
   const isDeconstructable = ((cell) => {
     if(property_foundIdx < 0) {
@@ -794,17 +975,18 @@ export function tryDeconstruct(players: DBManager.PlayerType[], properties: DBMa
   }
 }
 
-export function setDices(roomId: string, dices: {dice1: 1 | 2 | 3 | 4 | 5 | 6, dice2: 1 | 2 | 3 | 4 | 5 | 6} | undefined) {
-  if(dices === undefined) {
-    DBManager.RoomDices[roomId] = {
-      dice1: 0,
-      dice2: 0
-    }
-  } else {
-    DBManager.RoomDices[roomId] = dices
+export function setDices(roomId: string, callback: (dice1: 0 | 1 | 2 | 3 | 4 | 5 | 6, dice2: 0 | 1 | 2 | 3 | 4 | 5 | 6) => void, dices: {dice1: 1 | 2 | 3 | 4 | 5 | 6, dice2: 1 | 2 | 3 | 4 | 5 | 6} | undefined) {
+  const roomDices = DBType.DB.get(roomId)?.dices
+  if(roomDices === undefined) {
+    return;
   }
-}
-
-export function getDices(roomId: string) {
-  return DBManager.RoomDices[roomId]
+  if(dices === undefined) {
+    roomDices.dice1 = roomDices.dice2 = 0
+  } else {
+    roomDices.dice1 = dices.dice1
+    roomDices.dice2 = dices.dice2
+  }
+  DBType.DB.updateRoom(roomId,{
+    dices: roomDices
+  },(_) => callback(roomDices.dice1, roomDices.dice2))
 }

@@ -4,6 +4,8 @@ import { sample } from "$std/collections/mod.ts"
 
 import io from "./server.ts"
 
+import * as Manager from "./manager.ts"
+
 export type CellType = "infrastructure" | "industrial" | "land" | "lotto" | "charity" | "chance" | "transportation" | "hospital" | "park" | "concert" | "university" | "jail" | "start";
 
 type CellDic = {
@@ -413,9 +415,7 @@ function gatherPredefined(): ICellData[] {
     return output.toSorted((a,b) => a.cellId - b.cellId);
 }
 
-import * as DBManager from "./dbManager.ts"
-
-import * as GameManager from "./gameManager.ts"
+import * as DBManager from "./manager.ts"
 
 
 const PREDEFINED_CELLS: ICellData[] = gatherPredefined();
@@ -425,7 +425,7 @@ export default PREDEFINED_CELLS
 type ChanceCard = {
     description: string,
     displayName: string,
-    action: (state: DBManager.GameStateType, playerEmail: string) => DBManager.GameStateType,
+    action: (state: DBManager.GameStateType, playerEmail: string) => DBManager.GameStateType | null,
     isMoving: boolean
 }
 
@@ -440,24 +440,24 @@ export const CHANCE_IDS = [
 
 export type ChanceActionCallback = ({chances, payments}: {chances: {queue: string[], processed: number}, payments: {queue: {
     cellId: number,
-    mandatory: GameManager.PaymentTransactionJSON | null,
-    optional: GameManager.PaymentTransactionJSON | null
+    mandatory: Manager.PaymentTransactionJSON | null,
+    optional: Manager.PaymentTransactionJSON | null
   }[], processed: number}}, {description, displayName}: {description: string, displayName: string}) => void
 
 export type PaymentsActionCallback = ({chances, payments}: {chances: {queue: string[], processed: number}, payments: {queue: {
     cellId: number,
-    mandatory: GameManager.PaymentTransactionJSON | null,
-    optional: GameManager.PaymentTransactionJSON | null
+    mandatory: Manager.PaymentTransactionJSON | null,
+    optional: Manager.PaymentTransactionJSON | null
   }[], processed: number}}, {mandatory, optional}:{
-    mandatory: GameManager.PaymentTransactionJSON | null,
-    optional: GameManager.PaymentTransactionJSON | null
+    mandatory: Manager.PaymentTransactionJSON | null,
+    optional: Manager.PaymentTransactionJSON | null
 }) => void
 
 
 export function chanceAction(roomId: string, state: DBManager.GameStateType, playerEmail: string, chanceId: string, callback: ChanceActionCallback) {
     const {description, displayName, action} = CHANCE_CARDS[chanceId]
     const state_after = action(state,playerEmail)
-    GameManager.safeEnqueueChance(roomId,chanceId,(q) => callback(q,{description,displayName}))
+    Manager.safeEnqueueChance(roomId,chanceId,(q) => callback(q,{description,displayName}))
     return state_after
 }
 
@@ -476,13 +476,12 @@ export const CHANCE_CARDS: {
                     cash: player.cash + ((player.email === playerEmail) ? 1000000 : 0)
                 })
             }
-            GameManager.setGameState(roomId, {
+            const state_after = Manager.DBType.DB.updateGameState(roomId, {
                 players: player_updates
             },(updated) => {
                 io.to(roomId).emit("updateGameState", {fresh: false, gameState: updated})
             })
-            const state_after = GameManager.getGameState(roomId)
-            return state_after
+            return state_after ?? null
         },
         isMoving: false
     },
@@ -495,21 +494,21 @@ export const CHANCE_CARDS: {
             if(playerIdx < 0) {
                 return state
             }
-            GameManager.movePlayer(state,playerIdx,{
+            let state_after: Manager.GameStateType | undefined
+            Manager.movePlayer(state,playerIdx,{
                 kind: "forward",
                 type: "navigateTo",
                 dest: University.UniversityCell.cellId
             },(updated) => {
-                GameManager.setGameState(roomId,updated,(_updated) => {
+                Manager.DBType.DB.updateGameState(roomId,updated,(_updated) => {
                     io.to(roomId).emit("updateGameState", {fresh: false, gameState: _updated})
                 })
             },(updated) => {
-                GameManager.setGameState(roomId,updated,(_updated) => {
+                state_after = Manager.DBType.DB.updateGameState(roomId,updated,(_updated) => {
                     io.to(roomId).emit("updateGameState", {fresh: false, gameState: _updated})
                 })
             })
-            const state_after = GameManager.getGameState(roomId)
-            return state_after
+            return state_after ?? null
         },
         isMoving: true
     },
@@ -532,13 +531,12 @@ export const CHANCE_CARDS: {
                     player_updates.push(player)
                 }
             }
-            GameManager.setGameState(roomId, {
+            const state_after = Manager.DBType.DB.updateGameState(roomId, {
                 players: player_updates
             },(updated) => {
                 io.to(roomId).emit("updateGameState", {fresh: false, gameState: updated})
             })
-            const state_after = GameManager.getGameState(roomId)
-            return state_after
+            return state_after ?? null
         },
         isMoving: false
     },
@@ -561,13 +559,12 @@ export const CHANCE_CARDS: {
                     player_updates.push(player)
                 }
             }
-            GameManager.setGameState(roomId, {
+            const state_after = Manager.DBType.DB.updateGameState(roomId, {
                 players: player_updates
             },(updated) => {
                 io.to(roomId).emit("updateGameState", {fresh: false, gameState: updated})
             })
-            const state_after = GameManager.getGameState(roomId)
-            return state_after
+            return state_after ?? null
         },
         isMoving: false
     },
@@ -590,13 +587,12 @@ export const CHANCE_CARDS: {
                     player_updates.push(player)
                 }
             }
-            GameManager.setGameState(roomId, {
+            const state_after = Manager.DBType.DB.updateGameState(roomId, {
                 players: player_updates
             },(updated) => {
                 io.to(roomId).emit("updateGameState", {fresh: false, gameState: updated})
             })
-            const state_after = GameManager.getGameState(roomId)
-            return state_after
+            return state_after ?? null
         },
         isMoving: false
     },
@@ -605,15 +601,14 @@ export const CHANCE_CARDS: {
         displayName: "임대료 통제",
         action: ( state, _playerEmail) => {
             const roomId = state.roomId
-            GameManager.setGameState(roomId,{
+            const state_after = Manager.DBType.DB.updateGameState(roomId,{
                 sidecars: {
                     limitRents: state.sidecars.limitRents + 4
                 }
             },(updated) => {
                 io.to(roomId).emit("updateGameState", {fresh: false, gameState: updated})
             })
-            const state_after = GameManager.getGameState(roomId)
-            return state_after
+            return state_after ?? null
         },
         isMoving: false
     }
@@ -624,11 +619,11 @@ export function randomChanceId() {
 }
 
 export function transact<T extends ICellData>(playerEmail: string, players: DBManager.PlayerType[], properties: DBManager.PropertyType[], cell: T): {
-    mandatory?: GameManager.PaymentTransaction,
-    optional?: GameManager.PaymentTransaction
+    mandatory?: Manager.PaymentTransaction,
+    optional?: Manager.PaymentTransaction
 } {
-    const mandatories: GameManager.PaymentTransaction[] = []
-    const optionals: GameManager.PaymentTransaction[] = []
+    const mandatories: Manager.PaymentTransaction[] = []
+    const optionals: Manager.PaymentTransaction[] = []
     const paymentInfos = Array.from(cell.paymentInfos)
     const playerIdx_now = players.findIndex((player) => player.email === playerEmail)
     if(playerIdx_now < 0) {
@@ -646,55 +641,55 @@ export function transact<T extends ICellData>(playerEmail: string, players: DBMa
         default:
             return {};
         case "industrial": {
-                const p2g_transactions: GameManager.PaymentTransaction[] = []
+                const p2g_transactions: Manager.PaymentTransaction[] = []
                 for(const payment_info of paymentInfos) {
                     if(payment_info.kind === "P2G") {
-                        p2g_transactions.push(GameManager.PaymentTransaction.P2G(players[playerIdx_now].icon,payment_info.cost.default))
+                        p2g_transactions.push(Manager.PaymentTransaction.P2G(players[playerIdx_now].icon,payment_info.cost.default))
                     }
                 }
-                mandatories.push(p2g_transactions.reduce(((acc, curr) => acc.merge(curr)), new GameManager.PaymentTransaction({})))
+                mandatories.push(p2g_transactions.reduce(((acc, curr) => acc.merge(curr)), new Manager.PaymentTransaction({})))
                 if(owned) {
                     const ownerIdx = players.findIndex((player) => player.email === tmp.ownerEmail)
                     if(ownerIdx < 0) {
                         break;
                     }
                     
-                    const p2d_transactions: GameManager.PaymentTransaction[] = []
+                    const p2d_transactions: Manager.PaymentTransaction[] = []
                     const players_count = players.length
                     for(const payment_info of paymentInfos) {
                         if(payment_info.kind === "P2D") {
                             for (const other of players.filter(({icon}) => icon !== players[playerIdx_now].icon)) {
-                                p2d_transactions.push(GameManager.PaymentTransaction.P2P(players[playerIdx_now].icon,other.icon,(payment_info.cost.overall / players_count)))
+                                p2d_transactions.push(Manager.PaymentTransaction.P2P(players[playerIdx_now].icon,other.icon,(payment_info.cost.overall / players_count)))
                             }
                             if(playerIdx_now !== ownerIdx) {
-                                p2d_transactions.push(GameManager.PaymentTransaction.unidirectional(players[playerIdx_now].icon, -(payment_info.cost.overall / players_count)))
+                                p2d_transactions.push(Manager.PaymentTransaction.unidirectional(players[playerIdx_now].icon, -(payment_info.cost.overall / players_count)))
                             }
                         }
                     }
                     
-                    mandatories.push(p2d_transactions.reduce(((acc, curr) => acc.merge(curr)), new GameManager.PaymentTransaction({})))
+                    mandatories.push(p2d_transactions.reduce(((acc, curr) => acc.merge(curr)), new Manager.PaymentTransaction({})))
                     
                 } else {
                     for(const payment_info of paymentInfos) {
                         if(payment_info.kind === "P2D") {
-                            optionals.push(GameManager.PaymentTransaction.unidirectional(players[playerIdx_now].icon, -(payment_info.cost.overall)))
+                            optionals.push(Manager.PaymentTransaction.unidirectional(players[playerIdx_now].icon, -(payment_info.cost.overall)))
                         }
                     }
                 }
             }
             break;
         case "infrastructure": {
-                const p2g_transactions: GameManager.PaymentTransaction[] = []
+                const p2g_transactions: Manager.PaymentTransaction[] = []
                 for(const payment_info of paymentInfos) {
                     if(payment_info.kind === "P2G") {
-                        p2g_transactions.push(GameManager.PaymentTransaction.P2G(players[playerIdx_now].icon,payment_info.cost.default))
+                        p2g_transactions.push(Manager.PaymentTransaction.P2G(players[playerIdx_now].icon,payment_info.cost.default))
                     }
                 }
             }
             break;
         case "land": {
-                const p2g_transactions: GameManager.PaymentTransaction[] = []
-                const p2o_transactions: GameManager.PaymentTransaction[] = []
+                const p2g_transactions: Manager.PaymentTransaction[] = []
+                const p2o_transactions: Manager.PaymentTransaction[] = []
                 if(owned) {
                     const {all_built, minimum_constructed} = (cell.group_id !== undefined) ? ((() => {
                         const others_in_group = PREDEFINED_CELLS.filter(({group_id}) => group_id === cell.group_id)
@@ -725,7 +720,7 @@ export function transact<T extends ICellData>(playerEmail: string, players: DBMa
 
                     for(const payment_info of paymentInfos) {
                         if(payment_info.kind === "P2G") {
-                            p2g_transactions.push(GameManager.PaymentTransaction.P2G(players[playerIdx_now].icon,(payment_info.cost.default * coefficient)))
+                            p2g_transactions.push(Manager.PaymentTransaction.P2G(players[playerIdx_now].icon,(payment_info.cost.default * coefficient)))
                         }
                     }
 
@@ -733,40 +728,40 @@ export function transact<T extends ICellData>(playerEmail: string, players: DBMa
                     if(ownerIdx < 0) {
                         break;
                     }
-                    mandatories.push(p2g_transactions.reduce(((acc, curr) => acc.merge(curr)), new GameManager.PaymentTransaction({})))
+                    mandatories.push(p2g_transactions.reduce(((acc, curr) => acc.merge(curr)), new Manager.PaymentTransaction({})))
                     
                     
                     if(playerIdx_now !== ownerIdx) {
                         for(const payment_info of paymentInfos) {
                             if(payment_info.kind === "P2O") {
-                                p2o_transactions.push(GameManager.PaymentTransaction.P2P(players[playerIdx_now].icon,players[ownerIdx].icon,payment_info.cost.additional))
+                                p2o_transactions.push(Manager.PaymentTransaction.P2P(players[playerIdx_now].icon,players[ownerIdx].icon,payment_info.cost.additional))
                             }
                         }
-                        mandatories.push(p2o_transactions.reduce(((acc, curr) => acc.merge(curr)), new GameManager.PaymentTransaction({})))
+                        mandatories.push(p2o_transactions.reduce(((acc, curr) => acc.merge(curr)), new Manager.PaymentTransaction({})))
                     } else if (tmp.count < 3) {
                         for(const payment_info of paymentInfos) {
                             if(payment_info.kind === "P2O") {
-                                p2o_transactions.push(GameManager.PaymentTransaction.unidirectional(players[playerIdx_now].icon,-(payment_info.cost.additional)))
+                                p2o_transactions.push(Manager.PaymentTransaction.unidirectional(players[playerIdx_now].icon,-(payment_info.cost.additional)))
                             }
                         }
-                        optionals.push(p2o_transactions.reduce(((acc, curr) => acc.merge(curr)), new GameManager.PaymentTransaction({})))
+                        optionals.push(p2o_transactions.reduce(((acc, curr) => acc.merge(curr)), new Manager.PaymentTransaction({})))
                     }
                     
                     
                 } else {
                     for(const payment_info of paymentInfos) {
                         if(payment_info.kind === "P2G") {
-                            p2g_transactions.push(GameManager.PaymentTransaction.P2G(players[playerIdx_now].icon,payment_info.cost.default))
+                            p2g_transactions.push(Manager.PaymentTransaction.P2G(players[playerIdx_now].icon,payment_info.cost.default))
                         }
                     }
-                    mandatories.push(p2g_transactions.reduce(((acc, curr) => acc.merge(curr)), new GameManager.PaymentTransaction({})))
+                    mandatories.push(p2g_transactions.reduce(((acc, curr) => acc.merge(curr)), new Manager.PaymentTransaction({})))
                     
                     for(const payment_info of paymentInfos) {
                         if(payment_info.kind === "P2O") {
-                            p2o_transactions.push(GameManager.PaymentTransaction.unidirectional(players[playerIdx_now].icon,-(payment_info.cost.additional)))
+                            p2o_transactions.push(Manager.PaymentTransaction.unidirectional(players[playerIdx_now].icon,-(payment_info.cost.additional)))
                         }
                     }
-                    optionals.push(p2o_transactions.reduce(((acc, curr) => acc.merge(curr)), new GameManager.PaymentTransaction({})))
+                    optionals.push(p2o_transactions.reduce(((acc, curr) => acc.merge(curr)), new Manager.PaymentTransaction({})))
                     
                 }
             }
@@ -774,47 +769,47 @@ export function transact<T extends ICellData>(playerEmail: string, players: DBMa
         case "lotto":
             for(const payment_info of paymentInfos) {
                 if(payment_info.kind === "P2M") {
-                    optionals.push(GameManager.PaymentTransaction.unidirectional(players[playerIdx_now].icon,-(payment_info.cost.additional)))
+                    optionals.push(Manager.PaymentTransaction.unidirectional(players[playerIdx_now].icon,-(payment_info.cost.additional)))
                 }
             }
             break;
         case "charity":
             for(const payment_info of paymentInfos) {
                 if(payment_info.kind === "P2C") {
-                    mandatories.push(GameManager.PaymentTransaction.P2C(players[playerIdx_now].icon,payment_info.cost.default))
+                    mandatories.push(Manager.PaymentTransaction.P2C(players[playerIdx_now].icon,payment_info.cost.default))
                 }
             }
             break;
         case "hospital":
             for(const payment_info of paymentInfos) {
                 if(payment_info.kind === "G2M") {
-                    mandatories.push(GameManager.PaymentTransaction.G2M(payment_info.cost.fixed))
+                    mandatories.push(Manager.PaymentTransaction.G2M(payment_info.cost.fixed))
                 } else if(payment_info.kind === "P2M") {
-                    mandatories.push(GameManager.PaymentTransaction.unidirectional(players[playerIdx_now].icon,-(payment_info.cost.default)))
+                    mandatories.push(Manager.PaymentTransaction.unidirectional(players[playerIdx_now].icon,-(payment_info.cost.default)))
                 }
             }
             break;
         case "concert":
             for(const payment_info of paymentInfos) {
                 if(payment_info.kind === "P2G") {
-                    mandatories.push(GameManager.PaymentTransaction.P2G(players[playerIdx_now].icon,payment_info.cost.default))
+                    mandatories.push(Manager.PaymentTransaction.P2G(players[playerIdx_now].icon,payment_info.cost.default))
                 } else if (payment_info.kind == "P2C") {
-                    mandatories.push(GameManager.PaymentTransaction.P2C(players[playerIdx_now].icon,payment_info.cost.default))
+                    mandatories.push(Manager.PaymentTransaction.P2C(players[playerIdx_now].icon,payment_info.cost.default))
                 } else if(payment_info.kind === "P2M") {
-                    mandatories.push(GameManager.PaymentTransaction.unidirectional(players[playerIdx_now].icon,-(payment_info.cost.default)))
+                    mandatories.push(Manager.PaymentTransaction.unidirectional(players[playerIdx_now].icon,-(payment_info.cost.default)))
                 }
             }
             break;
         case "jail":
             for(const payment_info of paymentInfos) {
                 if(payment_info.kind === "P2M") {
-                    optionals.push(GameManager.PaymentTransaction.unidirectional(players[playerIdx_now].icon,-(payment_info.cost.default)))
+                    optionals.push(Manager.PaymentTransaction.unidirectional(players[playerIdx_now].icon,-(payment_info.cost.default)))
                 }
             }
             break;
     }
     return {
-        mandatory: (mandatories.length > 0) ? mandatories.reduce(((acc, curr) => acc.merge(curr)), new GameManager.PaymentTransaction({})) : undefined,
-        optional: (optionals.length > 0) ? optionals.reduce(((acc, curr) => acc.merge(curr)), new GameManager.PaymentTransaction({})) : undefined
+        mandatory: (mandatories.length > 0) ? mandatories.reduce(((acc, curr) => acc.merge(curr)), new Manager.PaymentTransaction({})) : undefined,
+        optional: (optionals.length > 0) ? optionals.reduce(((acc, curr) => acc.merge(curr)), new Manager.PaymentTransaction({})) : undefined
     }
 }
