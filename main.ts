@@ -26,19 +26,20 @@ type CreateRoomRequestPayloadType = {
 }
 
 
-router.post("/create", (context) => {
+router.post("/create", async (context) => {
   const bodyJSON = context.request.body({type: "json"})
-  bodyJSON.value.then((payload: CreateRoomRequestPayloadType) => {
+  const payload = await bodyJSON.value
+  try {
     DBType.DB.initializeRoom(payload.roomId, payload.player1, payload.player2, payload.player3, payload.player4)
     context.response.body = {status: "succeeded"}
-  }).catch(() => {
+  }
+  catch {
     context.response.body = {status: "failed"}
-  }).finally(() => {
+  }
+  finally {
     context.response.type = "application/json"
-    context.response.status = 200
-  })
-}).get("/",(ctx) => {
-  ctx.response.body = "Hello World!";
+    context.respond = true
+  }
 })
 
 app.use(oakCors({
